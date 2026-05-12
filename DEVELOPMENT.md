@@ -34,14 +34,13 @@ Deploys a local Prefill/Decode (P/D) inference stack to the `llm-d-coordinator-d
 - `/prefill/...` → prefill InferencePool → EPP-P → vllm-p pods
 - `/decode/...`  → decode InferencePool  → EPP-D → vllm-d pods
 
-
 > [!NOTE]
 > Pre-pull external images to avoid slow downloads during deploy:
 > ```
 > docker pull ghcr.io/llm-d/llm-d-inference-sim:v0.8.2
-> docker pull ghcr.io/llm-d/llm-d-inference-scheduler:latest
-> docker pull ghcr.io/llm-d/llm-d-routing-sidecar:latest
-> docker pull ghcr.io/llm-d/llm-d-uds-tokenizer:latest
+> docker pull ghcr.io/llm-d/llm-d-inference-scheduler:dev
+> docker pull ghcr.io/llm-d/llm-d-routing-sidecar:v0.8.0
+> docker pull ghcr.io/llm-d/llm-d-uds-tokenizer:v0.8.0
 > ```
 
 ### Accessing the Gateway
@@ -108,18 +107,15 @@ Deletes the Kind cluster entirely.
 Image tags and registry live in [versions.mk](versions.mk), which the Makefile includes
 and exports to `scripts/kind-dev-env.sh`:
 
-| Variable | Image | Default |
-|---|---|---|
-| `VLLM_IMAGE` / `VLLM_SIMULATOR_TAG` | `llm-d-inference-sim` | `v0.8.2` |
-| `EPP_IMAGE` / `EPP_TAG` | `llm-d-inference-scheduler` | `dev` (llm-d fork — registers `llm-d.ai/v1alpha1`) |
-| `SIDECAR_IMAGE` / `SIDECAR_TAG` | `llm-d-routing-sidecar` | `v0.8.0` |
-| `UDS_TOKENIZER_IMAGE` / `UDS_TOKENIZER_TAG` | `llm-d-uds-tokenizer` | `v0.8.0` |
-| `IMAGE_REGISTRY` | — | `ghcr.io/llm-d` |
-| `MODEL_NAME` | vLLM model (in script) | `TinyLlama/TinyLlama-1.1B-Chat-v1.0` |
-| `VLLM_REPLICA_COUNT_P` / `VLLM_REPLICA_COUNT_D` | replica counts (in script) | `1` / `1` |
-| `VLLM_DATA_PARALLEL_SIZE` | data-parallel ranks per vLLM pod (in script) | `1` |
+| Tag variable | Full image variable | Image | Default tag |
+|---|---|---|---|
+| `VLLM_SIMULATOR_TAG` | `VLLM_IMAGE` | `llm-d-inference-sim` | `v0.8.2` |
+| `EPP_TAG` | `EPP_IMAGE` | `llm-d-inference-scheduler` | `dev` |
+| `SIDECAR_TAG` | `SIDECAR_IMAGE` | `llm-d-routing-sidecar` | `v0.8.0` |
+| `UDS_TOKENIZER_TAG` | `UDS_TOKENIZER_IMAGE` | `llm-d-uds-tokenizer` | `v0.8.0` |
+| `IMAGE_REGISTRY` | — | — | `ghcr.io/llm-d` |
 
-Override any image via the command line — Make's `?=` assignments yield to existing env
+Override any tag via the command line — Make's `?=` assignments yield to existing env
 or command-line values:
 
 ```bash
