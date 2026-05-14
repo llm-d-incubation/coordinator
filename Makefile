@@ -4,8 +4,8 @@ SHELL := /usr/bin/env bash
 include versions.mk
 
 # Export all dev-env image references so scripts/kind-dev-env.sh sees them.
-export IMAGE_REGISTRY VLLM_SIMULATOR_TAG EPP_TAG SIDECAR_TAG UDS_TOKENIZER_TAG
-export VLLM_IMAGE EPP_IMAGE SIDECAR_IMAGE UDS_TOKENIZER_IMAGE
+export IMAGE_REGISTRY COORDINATOR_TAG VLLM_SIMULATOR_TAG EPP_TAG SIDECAR_TAG UDS_TOKENIZER_TAG
+export COORDINATOR_IMAGE VLLM_IMAGE EPP_IMAGE SIDECAR_IMAGE UDS_TOKENIZER_IMAGE
 
 # Defaults
 TARGETOS ?= $(shell command -v go >/dev/null 2>&1 && go env GOOS || uname -s | tr '[:upper:]' '[:lower:]')
@@ -14,8 +14,9 @@ PROJECT_NAME ?= llm-d-coordinator
 BUILDER_IMAGE_NAME ?= llm-d-coordinator-builder
 IMAGE_REGISTRY ?= ghcr.io/llm-d
 
-COORDINATOR_TAG ?= dev
-export COORDINATOR_IMAGE ?= $(IMAGE_REGISTRY)/$(PROJECT_NAME):$(COORDINATOR_TAG)
+# Internal variable mappings for the generic image-build-% target.
+coordinator_IMAGE = $(COORDINATOR_IMAGE)
+epp_IMAGE         = $(EPP_IMAGE)
 
 BUILDER_TAG ?= dev
 BUILDER_TAG_BASE ?= $(IMAGE_REGISTRY)/$(BUILDER_IMAGE_NAME)
@@ -39,11 +40,6 @@ LINT_NEW_ONLY ?= false
 BASE_IMAGE ?=
 
 TEST_PACKAGES = $$(go list ./... | grep -v /test/ | tr '\n' ' ')
-
-COVERAGE_DIR       ?= coverage
-COVERAGE_THRESHOLD ?= 0
-COVERAGE_LABEL     ?= main
-BASE_REF           ?= main
 
 # Common flags for running the builder container: mounts source, Go caches, and runs as current user.
 # Podman rootless requires --userns=keep-id to correctly map host UID; docker uses -u directly.
@@ -131,51 +127,8 @@ test: test-unit ## Run all tests
 
 .PHONY: test-unit
 test-unit: image-build-builder
-	@mkdir -p $(COVERAGE_DIR)
 	@printf "\033[33;1m==== Running Unit Tests ====\033[0m\n"
-	$(BUILDER_RUN) "go test -v -race -coverprofile=$(COVERAGE_DIR)/unit.out -covermode=atomic $(TEST_PACKAGES)"
-	$(BUILDER_RUN) 'go tool cover -func=$(COVERAGE_DIR)/unit.out | tail -1'
-
-##@ Coverage
-
-.PHONY: test-coverage
-test-coverage: test-unit ## Run all unit tests with coverage (alias for test-unit)
-
-.PHONY: coverage-report
-coverage-report: image-build-builder ## Generate HTML coverage reports (open coverage/*.html in browser)
-	$(BUILDER_RUN) 'for f in $(COVERAGE_DIR)/*.out; do \
-	    name=$$(basename "$$f" .out); \
-	    go tool cover -html="$$f" -o "$(COVERAGE_DIR)/$$name.html"; \
-	    printf "  $$name → $(COVERAGE_DIR)/$$name.html\n"; \
-	done'
-
-.PHONY: coverage-compare
-coverage-compare: ## Compare coverage vs baseline (BASELINE_DIR=path or BASE_REF=git-ref, default main; COVERAGE_LABEL=label)
-	@if [ -n "$(BASELINE_DIR)" ]; then \
-	    ./scripts/compare-coverage.sh "$(BASELINE_DIR)" "$(COVERAGE_DIR)" "$(COVERAGE_THRESHOLD)" "$(COVERAGE_LABEL)"; \
-	else \
-	    printf "\033[33;1m==== Building Baseline Coverage from $(BASE_REF) ====\033[0m\n"; \
-	    EXISTING=$$(git worktree list --porcelain \
-	        | awk '/^worktree /{wt=$$2} /^branch refs\/heads\/$(BASE_REF)$$/{print wt}'); \
-	    if [ -n "$$EXISTING" ]; then \
-	        WORKTREE="$$EXISTING"; CLEANUP=0; \
-	    else \
-	        WORKTREE=$$(mktemp -u /tmp/cov-baseline-XXXXXX); \
-	        git worktree add --quiet "$$WORKTREE" "$(BASE_REF)"; \
-	        CLEANUP=1; \
-	    fi; \
-	    mkdir -p "$(COVERAGE_DIR)/baseline"; \
-	    $(CONTAINER_RUNTIME) run $(BUILDER_RUN_FLAGS) \
-	        -v "$$WORKTREE":/baseline:Z \
-	        $(BUILDER_IMAGE) sh -c " \
-	            cd /baseline && \
-	            go test -race -coverprofile=/app/$(COVERAGE_DIR)/baseline/coordinator.out -covermode=atomic \
-	                $$(go list ./... | grep -v /test/ | tr '\n' ' ')"; \
-	    [ "$$CLEANUP" -eq 1 ] && git worktree remove --force "$$WORKTREE"; \
-	    ./scripts/compare-coverage.sh "$(COVERAGE_DIR)/baseline" "$(COVERAGE_DIR)" "$(COVERAGE_THRESHOLD)" "$(COVERAGE_LABEL)"; \
-	fi
-
-##@ Build
+	$(BUILDER_RUN) "go test -v -race $(TEST_PACKAGES)"
 
 .PHONY: build
 build: image-build-builder ## Build the coordinator binary
@@ -194,8 +147,11 @@ check-container-tool:
 	fi
 
 .PHONY: image-build
-image-build: check-container-tool ## Build coordinator container image using $(CONTAINER_RUNTIME)
-	@printf "\033[33;1m==== Building Docker image $(COORDINATOR_IMAGE) ====\033[0m\n"
+image-build: image-build-epp image-build-coordinator ## Build all container images (epp + coordinator)
+
+.PHONY: image-build-%
+image-build-%: check-container-tool ## Build container image using $(CONTAINER_RUNTIME) (e.g. image-build-coordinator, image-build-epp)
+	@printf "\033[33;1m==== Building Docker image $($*_IMAGE) ====\033[0m\n"
 	$(CONTAINER_RUNTIME) build \
 		--platform linux/$(TARGETARCH) \
 		--build-arg TARGETOS=linux \
@@ -204,7 +160,7 @@ image-build: check-container-tool ## Build coordinator container image using $(C
 		--build-arg BUILD_REF=$(BUILD_REF) \
 		--build-arg LDFLAGS="$(LDFLAGS)" \
 		$(if $(BASE_IMAGE),--build-arg BASE_IMAGE="$(BASE_IMAGE)") \
-		-t $(COORDINATOR_IMAGE) -f Dockerfile.coordinator .
+		-t $($*_IMAGE) -f Dockerfile.$* .
 
 .PHONY: image-build-builder
 image-build-builder: check-container-tool ## Build builder image if missing locally, stamp missing, or Dockerfile.builder newer than stamp
@@ -216,21 +172,6 @@ image-build-builder: check-container-tool ## Build builder image if missing loca
 		mkdir -p $(dir $(BUILDER_STAMP)); \
 		touch $(BUILDER_STAMP); \
 	fi
-
-##@ Environment
-
-.PHONY: env
-env: ## Print environment variables
-	@echo "TARGETOS=$(TARGETOS)"
-	@echo "TARGETARCH=$(TARGETARCH)"
-	@echo "CONTAINER_RUNTIME=$(CONTAINER_RUNTIME)"
-	@echo "COORDINATOR_TAG=$(COORDINATOR_TAG)"
-	@echo "COORDINATOR_IMAGE=$(COORDINATOR_IMAGE)"
-	@echo "BUILDER_IMAGE=$(BUILDER_IMAGE)"
-	@echo "GIT_COMMIT_SHA=$(GIT_COMMIT_SHA)"
-	@echo "BUILD_REF=$(BUILD_REF)"
-
-##@ EPP Image
 
 .PHONY: image-build-epp
 image-build-epp: ## Clone llm-d-inference-scheduler at pinned commit and build EPP image
@@ -245,33 +186,3 @@ env-dev-kind: image-build-epp ## Deploy dev environment on a local Kind cluster 
 .PHONY: clean-env-dev-kind
 clean-env-dev-kind: ## Delete the Kind dev cluster
 	kind delete cluster --name llm-d-coordinator-dev
-
-##@ Go Coordinator Service
-
-BINARY := coordinator
-BUILD_DIR := bin
-
-.PHONY: build
-build: ## Build the coordinator Go binary
-	@mkdir -p $(BUILD_DIR)
-	go build -o $(BUILD_DIR)/$(BINARY) ./cmd/coordinator
-
-.PHONY: test
-test: ## Run Go tests
-	go test ./...
-
-.PHONY: lint
-lint: ## Run Go linter
-	golangci-lint run ./...
-
-.PHONY: run
-run: build ## Build and run the coordinator locally
-	$(BUILD_DIR)/$(BINARY) --config configs/coordinator.yaml
-
-.PHONY: tidy
-tidy: ## Run go mod tidy
-	go mod tidy
-
-.PHONY: clean
-clean: ## Remove build artifacts
-	rm -rf $(BUILD_DIR)

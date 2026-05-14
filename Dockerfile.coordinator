@@ -23,6 +23,7 @@ RUN go mod download
 # Copy the go source
 COPY cmd/ cmd/
 COPY pkg/ pkg/
+COPY configs/ /configs/
 
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="${LDFLAGS}" -o bin/coordinator ./cmd/coordinator/...
 
@@ -33,4 +34,4 @@ COPY --from=builder /workspace/bin/coordinator /coordinator
 
 USER 65532:65532
 
-ENTRYPOINT ["/coordinator"]
+ENTRYPOINT ["/coordinator", "--config", "/configs/coordinator.yaml"]

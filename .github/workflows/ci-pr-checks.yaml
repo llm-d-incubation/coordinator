@@ -93,13 +93,6 @@ jobs:
         shell: bash
         run: make build
 
-      - name: Restore main branch coverage baseline
-        if: github.event_name == 'pull_request'
-        uses: actions/cache/restore@v5
-        with:
-          path: coverage/baseline
-          key: coverage-main
-
       - name: Run unit tests
         shell: bash
         run: make test-unit

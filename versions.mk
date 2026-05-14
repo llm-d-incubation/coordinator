@@ -5,12 +5,14 @@
 IMAGE_REGISTRY       ?= ghcr.io/llm-d
 
 # Image tags
+COORDINATOR_TAG      ?= dev
 VLLM_SIMULATOR_TAG   ?= v0.8.2
 EPP_TAG              ?= dev
 SIDECAR_TAG          ?= v0.8.0
 UDS_TOKENIZER_TAG    ?= v0.8.0
 
 # Full image references (derived; override only if you need a non-standard repo)
+COORDINATOR_IMAGE    ?= $(IMAGE_REGISTRY)/llm-d-coordinator:$(COORDINATOR_TAG)
 VLLM_IMAGE           ?= $(IMAGE_REGISTRY)/llm-d-inference-sim:$(VLLM_SIMULATOR_TAG)
 EPP_IMAGE            ?= $(IMAGE_REGISTRY)/llm-d-inference-scheduler:$(EPP_TAG)
 SIDECAR_IMAGE        ?= $(IMAGE_REGISTRY)/llm-d-routing-sidecar:$(SIDECAR_TAG)
