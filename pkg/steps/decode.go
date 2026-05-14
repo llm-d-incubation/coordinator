@@ -94,6 +94,7 @@ func (s *DecodeStep) injectUUIDs(reqCtx *pipeline.RequestContext) {
 			}
 			if hashIdx < len(reqCtx.MultimodalEntries) {
 				partMap["uuid"] = reqCtx.MultimodalEntries[hashIdx].Hash
+				partMap["image_url"] = nil
 				hashIdx++
 			}
 		}

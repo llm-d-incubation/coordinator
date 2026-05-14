@@ -269,8 +269,12 @@ X-Request-ID: <request_id>
 
 ### Response
 
+Standard GenerateResponse with `kv_transfer_params`:
+
 ```json
 {
+  "request_id": "req-abc-123",
+  "choices": [],
   "kv_transfer_params": {
     "block_id": "block-999",
     "peer_host": "10.0.0.42",
@@ -310,12 +314,12 @@ Example for `/v1/chat/completions`:
         {"type": "text", "text": "Describe these images"},
         {
           "type": "image_url",
-          "image_url": {"url": "data:image/jpeg;base64,/9j/4AAQ..."},
+          "image_url": null,
           "uuid": "abc123hash"
         },
         {
           "type": "image_url",
-          "image_url": {"url": "data:image/png;base64,iVBORw0K..."},
+          "image_url": null,
           "uuid": "def456hash"
         }
       ]
@@ -331,6 +335,7 @@ Example for `/v1/chat/completions`:
 
 **Notes:**
 - `uuid` is added to each `image_url` content part (value is the mm_hash from the render step)
+- `image_url` is set to `null` (the decode worker doesn't need the image data, it uses uuid to reference the KV cache)
 - `kv_transfer_params` is injected at the top level of the request body
 - The path uses the original client path: `/decode/v1/chat/completions` or `/decode/v1/completions`
 
@@ -399,7 +404,7 @@ The `gateway_path` is configurable per step (defaults to `/inference/v1/generate
 
 When the request contains no `image_url` parts:
 - `replace-media-urls`: no-op (no downloads, no multimodal entries)
-- `render`: skipped (no multimodal entries to process)
+- `render`: always runs - tokenizes the prompt and returns `token_ids` (features will be empty)
 - `encode`: skipped (`MultimodalEntries` is empty)
 - `prefill`: sends request without `features` or `ec_transfer_params`
 - `decode`: sends request without `uuid` fields (only `kv_transfer_params`)
