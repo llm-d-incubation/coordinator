@@ -2,13 +2,16 @@
 k8s = "k8s"
 KServe = "KServe"
 vLLM = "vLLM"
+# base64-encoded values contain uppercase letter runs (e.g. "UE9EUw...") that
+# are not English words; suppress the false positive.
+UE = "UE"
 
 [files]
 extend-exclude = [
     "*.png",
     "*.jpg",
-    "deploy/",
+    "deploy/**",
     "go.mod",
     "go.sum",
-    "bin/"
+    "bin/**"
 ]
