@@ -54,3 +54,6 @@ updates:
       - "dependencies"
     commit-message:
       prefix: "deps(docker)"
+    ignore:
+      - dependency-name: "*golang*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
