@@ -13,6 +13,8 @@ rendering_service:
   address: "http://rendering-service:8080"
 
 pipeline:
+  kv_connector: nixlv2          # nixlv2 | shared_storage
+  ec_connector: shared_storage  # shared_storage | nixlv2
   steps:
     - type: replace-media-urls
       params:
