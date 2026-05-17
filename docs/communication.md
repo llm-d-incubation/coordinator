@@ -314,12 +314,12 @@ Example for `/v1/chat/completions`:
         {"type": "text", "text": "Describe these images"},
         {
           "type": "image_url",
-          "image_url": null,
+          "image_url": {"url": "data:image/jpeg;base64,/9j/4AAQ..."},
           "uuid": "abc123hash"
         },
         {
           "type": "image_url",
-          "image_url": null,
+          "image_url": {"url": "data:image/jpeg;base64,iVBORw0K..."},
           "uuid": "def456hash"
         }
       ]
@@ -335,8 +335,8 @@ Example for `/v1/chat/completions`:
 ```
 
 **Notes:**
-- `uuid` is added to each `image_url` content part (value is the mm_hash from the render step)
-- `image_url` is set to `null` (the decode worker doesn't need the image data, it uses uuid to reference the KV cache)
+- `uuid` is added to each `image_url` content part (value is the mm_hash from the render step) for multimodal cache lookup
+- `image_url` retains the original base64 data URI from the replace-media-urls step so the decode worker can process images and produce the correct token sequence (matching what prefill computed)
 - `kv_transfer_params` is injected at the top level of the request body
 - `do_remote_prefill: true` is added by the coordinator to signal the decode worker to fetch KV from the remote prefill worker
 - The path uses the original client path: `/decode/v1/chat/completions` or `/decode/v1/completions`

@@ -55,9 +55,13 @@ func TestDecodeStep_NonStreaming(t *testing.T) {
 		if imgPart["uuid"] != "hash-a" {
 			t.Fatalf("expected uuid=hash-a in image_url part, got %v", imgPart["uuid"])
 		}
-		// Verify image_url is set to null
-		if imgPart["image_url"] != nil {
-			t.Fatalf("expected image_url=nil, got %v", imgPart["image_url"])
+		// Verify image_url is preserved alongside the injected uuid
+		imgURL, ok := imgPart["image_url"].(map[string]any)
+		if !ok {
+			t.Fatalf("expected image_url map, got %T", imgPart["image_url"])
+		}
+		if imgURL["url"] != "https://example.com/cat.jpg" {
+			t.Fatalf("expected image_url.url preserved, got %v", imgURL["url"])
 		}
 
 		_ = json.NewEncoder(w).Encode(map[string]any{
