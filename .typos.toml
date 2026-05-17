@@ -2,6 +2,7 @@
 k8s = "k8s"
 KServe = "KServe"
 vLLM = "vLLM"
+thw = "thw"
 
 [files]
 extend-exclude = [
