@@ -23,6 +23,7 @@ pipeline:
     - type: render
       params:
         endpoint: "/v1/chat/completions/render"
+    #- type: conditional-decode
     - type: encode
       params:
         gateway_path: "/inference/v1/generate"
