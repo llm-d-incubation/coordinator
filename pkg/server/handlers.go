@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"time"
@@ -71,7 +72,7 @@ func (s *Server) handleInference(w http.ResponseWriter, r *http.Request) {
 
 	if err := s.pipeline.Execute(ctx, reqCtx); err != nil {
 		logger.Error(err, "pipeline execution failed")
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		http.Error(w, fmt.Sprintf("internal error (request_id: %s)", reqCtx.RequestID), http.StatusBadGateway)
 	}
 }
 
