@@ -1,8 +1,13 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"flag"
+	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 
@@ -39,8 +44,21 @@ func main() {
 	p := pipeline.New(steps)
 	srv := server.New(cfg.Server, p)
 
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+
+	go func() {
+		<-ctx.Done()
+		stop()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.Server.ShutdownTimeout)
+		defer cancel()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			log.Error(err, "shutdown error")
+		}
+	}()
+
 	log.Info("starting coordinator", "addr", cfg.Server.ListenAddr)
-	if err := srv.ListenAndServe(); err != nil {
+	log.Info("graceful shutdown enabled", "timeout", cfg.Server.ShutdownTimeout)
+	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		log.Error(err, "server error")
 		os.Exit(1)
 	}
