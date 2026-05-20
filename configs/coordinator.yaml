@@ -2,6 +2,7 @@ server:
   listen_addr: ":8080"
   read_timeout: 30s
   write_timeout: 120s
+  shutdown_timeout: 25s
 
 gateway:
   address: "http://envoy-gateway:80"
