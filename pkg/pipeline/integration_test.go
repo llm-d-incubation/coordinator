@@ -54,11 +54,13 @@ func TestFullPipeline_AllConnectorCombinations(t *testing.T) {
 			var capturedPrefillBody map[string]any
 
 			gatewayServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				switch {
-				case strings.HasPrefix(r.URL.Path, "/encode"):
+				phase := r.Header.Get(gateway.EPPPhaseHeader)
+				switch phase {
+				case gateway.PhaseEncode:
 					body, _ := io.ReadAll(r.Body)
 					var parsed map[string]any
 					_ = json.Unmarshal(body, &parsed)
+					// Generate format: features at top level
 					features, _ := parsed["features"].(map[string]any)
 					mmHashes, _ := features["mm_hashes"].(map[string]any)
 					imageHashes, _ := mmHashes["image"].([]any)
@@ -68,7 +70,7 @@ func TestFullPipeline_AllConnectorCombinations(t *testing.T) {
 							hash: map[string]any{"peer_host": "10.0.0.1", "peer_port": 5501},
 						},
 					})
-				case strings.HasPrefix(r.URL.Path, "/prefill"):
+				case gateway.PhasePrefill:
 					body, _ := io.ReadAll(r.Body)
 					var parsed map[string]any
 					_ = json.Unmarshal(body, &parsed)
@@ -82,7 +84,7 @@ func TestFullPipeline_AllConnectorCombinations(t *testing.T) {
 							"peer_port": 5502,
 						},
 					})
-				case strings.HasPrefix(r.URL.Path, "/decode"):
+				case gateway.PhaseDecode:
 					_ = json.NewEncoder(w).Encode(map[string]any{
 						"choices": []map[string]any{
 							{"message": map[string]any{"role": "assistant", "content": "Hello!"}},
@@ -99,9 +101,9 @@ func TestFullPipeline_AllConnectorCombinations(t *testing.T) {
 			stepConfigs := []config.StepConfig{
 				{Type: "replace-media-urls", Params: map[string]any{"download_timeout": "5s"}},
 				{Type: "render", Params: map[string]any{"endpoint": "/v1/chat/completions/render"}},
-				{Type: "encode", Params: map[string]any{steps.ParamGatewayPath: gateway.DefaultGeneratePath, steps.ParamECConnector: tc.ecConnector}},
-				{Type: "prefill", Params: map[string]any{steps.ParamGatewayPath: gateway.DefaultGeneratePath, steps.ParamKVConnector: tc.kvConnector, steps.ParamECConnector: tc.ecConnector}},
-				{Type: "decode", Params: map[string]any{steps.ParamKVConnector: tc.kvConnector}},
+				{Type: "encode", Params: map[string]any{"use_openai_format": false, steps.ParamECConnector: tc.ecConnector}},
+				{Type: "prefill", Params: map[string]any{"use_openai_format": false, steps.ParamKVConnector: tc.kvConnector, steps.ParamECConnector: tc.ecConnector}},
+				{Type: "decode", Params: map[string]any{"use_openai_format": false, steps.ParamKVConnector: tc.kvConnector}},
 			}
 
 			pipelineSteps := make([]pipeline.Step, 0, len(stepConfigs))
@@ -200,8 +202,9 @@ func TestFullPipeline_Integration(t *testing.T) {
 	defer renderServer.Close()
 
 	gatewayServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case strings.HasPrefix(r.URL.Path, "/encode"):
+		phase := r.Header.Get(gateway.EPPPhaseHeader)
+		switch phase {
+		case gateway.PhaseEncode:
 			body, _ := io.ReadAll(r.Body)
 			var parsed map[string]any
 			_ = json.Unmarshal(body, &parsed)
@@ -214,7 +217,7 @@ func TestFullPipeline_Integration(t *testing.T) {
 					hash: map[string]any{"peer_host": "10.0.0.1", "peer_port": 5501},
 				},
 			})
-		case strings.HasPrefix(r.URL.Path, "/prefill"):
+		case gateway.PhasePrefill:
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"kv_transfer_params": map[string]any{
 					"block_id":  "abc123",
@@ -222,7 +225,7 @@ func TestFullPipeline_Integration(t *testing.T) {
 					"peer_port": 5502,
 				},
 			})
-		case strings.HasPrefix(r.URL.Path, "/decode"):
+		case gateway.PhaseDecode:
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"choices": []map[string]any{
 					{"message": map[string]any{"role": "assistant", "content": "Hello!"}},
@@ -242,9 +245,9 @@ func TestFullPipeline_Integration(t *testing.T) {
 	stepConfigs := []config.StepConfig{
 		{Type: "replace-media-urls", Params: map[string]any{"download_timeout": "5s"}},
 		{Type: "render", Params: map[string]any{"endpoint": "/v1/chat/completions/render"}},
-		{Type: "encode", Params: map[string]any{steps.ParamGatewayPath: gateway.DefaultGeneratePath, steps.ParamECConnector: ec.NIXLv2}},
-		{Type: "prefill", Params: map[string]any{steps.ParamGatewayPath: gateway.DefaultGeneratePath, steps.ParamECConnector: ec.NIXLv2}},
-		{Type: "decode", Params: map[string]any{}},
+		{Type: "encode", Params: map[string]any{"use_openai_format": false, steps.ParamECConnector: ec.NIXLv2}},
+		{Type: "prefill", Params: map[string]any{"use_openai_format": false, steps.ParamECConnector: ec.NIXLv2}},
+		{Type: "decode", Params: map[string]any{"use_openai_format": false}},
 	}
 
 	pipelineSteps := make([]pipeline.Step, 0, len(stepConfigs))

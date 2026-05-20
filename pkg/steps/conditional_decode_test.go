@@ -20,10 +20,12 @@ func TestConditionalDecodeStep_CacheHit(t *testing.T) {
 	var receivedPath string
 	var receivedBody map[string]any
 	var receivedPreferHeader string
+	var receivedPhaseHeader string
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedPath = r.URL.Path
 		receivedPreferHeader = r.Header.Get("Prefer")
+		receivedPhaseHeader = r.Header.Get(gateway.EPPPhaseHeader)
 		body, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(body, &receivedBody)
 
@@ -48,6 +50,7 @@ func TestConditionalDecodeStep_CacheHit(t *testing.T) {
 		RequestID:      "req-1",
 		OriginalPath:   "/v1/chat/completions",
 		Body:           map[string]any{"model": "test-model", "stream": false, "messages": []any{}},
+		TokenIDs:       []int{1, 2345, 6789},
 		ResponseWriter: recorder,
 		Flusher:        recorder,
 	}
@@ -57,14 +60,27 @@ func TestConditionalDecodeStep_CacheHit(t *testing.T) {
 		t.Fatalf("expected ErrPipelineDone, got %v", err)
 	}
 
-	if receivedPath != decodePath {
-		t.Fatalf("expected path %s, got %s", decodePath, receivedPath)
+	if receivedPath != "/v1/chat/completions" {
+		t.Fatalf("expected path /v1/chat/completions, got %s", receivedPath)
+	}
+	if receivedPhaseHeader != gateway.PhaseDecode {
+		t.Fatalf("expected EPP-Phase: %s, got %q", gateway.PhaseDecode, receivedPhaseHeader)
 	}
 	if receivedBody["model"] != "test-model" {
 		t.Fatalf("expected model test-model in request body, got %v", receivedBody["model"])
 	}
 	if receivedPreferHeader != "if-available" {
 		t.Fatalf("expected Prefer: if-available header, got %q", receivedPreferHeader)
+	}
+
+	// Verify tokens field is present for chat completions format
+	tokens, ok := receivedBody["tokens"].(map[string]any)
+	if !ok {
+		t.Fatal("expected tokens field in chat/completions conditional-decode request")
+	}
+	tokenIDs, _ := tokens["token_ids"].([]any)
+	if len(tokenIDs) != 3 {
+		t.Fatalf("expected 3 token_ids in tokens field, got %v", tokenIDs)
 	}
 
 	result := recorder.Result()

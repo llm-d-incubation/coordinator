@@ -34,16 +34,17 @@ func TestTextOnlyRequest_SkipsMediaDownloadAndEncode(t *testing.T) {
 	defer renderServer.Close()
 
 	gatewayServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case strings.HasPrefix(r.URL.Path, "/encode"):
+		phase := r.Header.Get(gateway.EPPPhaseHeader)
+		switch phase {
+		case gateway.PhaseEncode:
 			encodeCalled.Store(true)
 			t.Error("encode should not be called for text-only request")
-		case strings.HasPrefix(r.URL.Path, "/prefill"):
+		case gateway.PhasePrefill:
 			prefillCalled.Store(true)
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"kv_transfer_params": map[string]any{"block_id": "b1", "peer_host": "10.0.0.2", "peer_port": 5502},
 			})
-		case strings.HasPrefix(r.URL.Path, "/decode"):
+		case gateway.PhaseDecode:
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"choices": []map[string]any{
 					{"message": map[string]any{"role": "assistant", "content": "Hi there!"}},
