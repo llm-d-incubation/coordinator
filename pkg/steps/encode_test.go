@@ -206,7 +206,7 @@ func TestEncodeStep_ChatCompletionsFormat(t *testing.T) {
 
 	reqCtx := &pipeline.RequestContext{
 		RequestID:    "req-chat",
-		OriginalPath: "/v1/chat/completions",
+		OriginalPath: gateway.PathChatCompletions,
 		Model:        "test-model",
 		TokenIDs:     []int{1, 32000, 32000, 32000, 2345},
 		Body: map[string]any{

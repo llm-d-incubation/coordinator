@@ -176,7 +176,7 @@ func TestPrefillStep_CompletionsFormat(t *testing.T) {
 	var prefillBody map[string]any
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/completions" {
+		if r.URL.Path != gateway.PathCompletions {
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
 		if r.Header.Get(gateway.EPPPhaseHeader) != gateway.PhasePrefill {
@@ -199,7 +199,7 @@ func TestPrefillStep_CompletionsFormat(t *testing.T) {
 
 	reqCtx := &pipeline.RequestContext{
 		RequestID:         "req-compl",
-		OriginalPath:      "/v1/completions",
+		OriginalPath:      gateway.PathCompletions,
 		Model:             "test-model",
 		TokenIDs:          []int{1, 2345, 6789},
 		MultimodalEntries: nil,
@@ -235,7 +235,7 @@ func TestPrefillStep_ChatCompletionsFormat(t *testing.T) {
 	var prefillBody map[string]any
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/chat/completions" {
+		if r.URL.Path != gateway.PathChatCompletions {
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
 		if r.Header.Get(gateway.EPPPhaseHeader) != gateway.PhasePrefill {
@@ -260,7 +260,7 @@ func TestPrefillStep_ChatCompletionsFormat(t *testing.T) {
 
 	reqCtx := &pipeline.RequestContext{
 		RequestID:    "req-chat",
-		OriginalPath: "/v1/chat/completions",
+		OriginalPath: gateway.PathChatCompletions,
 		Model:        "test-model",
 		TokenIDs:     []int{1, 32000, 32000, 32000, 2345},
 		Body: map[string]any{

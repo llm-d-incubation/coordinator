@@ -8,12 +8,13 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/llm-d/coordinator/pkg/gateway"
 	"github.com/llm-d/coordinator/pkg/pipeline"
 )
 
 func TestRenderStep_ParsesFullResponse(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/chat/completions/render" {
+		if r.URL.Path != gateway.PathChatCompletions+"/render" {
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
 		if r.Header.Get("Content-Type") != "application/json" {
@@ -38,7 +39,7 @@ func TestRenderStep_ParsesFullResponse(t *testing.T) {
 	}))
 	defer server.Close()
 
-	step, err := NewRenderStep(map[string]any{"endpoint": "/v1/chat/completions/render"})
+	step, err := NewRenderStep(map[string]any{"endpoint": gateway.PathChatCompletions + "/render"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,6 +124,75 @@ func TestRenderStep_RunsEvenWithNoMultimodal(t *testing.T) {
 	}
 	if len(reqCtx.TokenIDs) != 3 {
 		t.Fatalf("expected 3 token_ids, got %d", len(reqCtx.TokenIDs))
+	}
+}
+
+func TestRenderStep_CompletionsTokenArray_SkipsRender(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("render service should not be called for token array prompt")
+	}))
+	defer server.Close()
+
+	step, _ := NewRenderStep(map[string]any{})
+	step.(*RenderStep).SetServiceAddress(server.URL)
+
+	reqCtx := &pipeline.RequestContext{
+		OriginalPath: gateway.PathCompletions,
+		Body: map[string]any{
+			"model":  "test",
+			"prompt": []any{float64(1), float64(2345), float64(6789)},
+		},
+	}
+
+	err := step.Execute(context.Background(), reqCtx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(reqCtx.TokenIDs) != 3 {
+		t.Fatalf("expected 3 token_ids, got %d", len(reqCtx.TokenIDs))
+	}
+	if reqCtx.TokenIDs[0] != 1 || reqCtx.TokenIDs[1] != 2345 || reqCtx.TokenIDs[2] != 6789 {
+		t.Fatalf("unexpected token_ids: %v", reqCtx.TokenIDs)
+	}
+}
+
+func TestRenderStep_CompletionsTextPrompt_CallsRender(t *testing.T) {
+	var receivedPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedPath = r.URL.Path
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"token_ids": []int{1, 2345, 6789},
+		})
+	}))
+	defer server.Close()
+
+	step, _ := NewRenderStep(map[string]any{})
+	step.(*RenderStep).SetServiceAddress(server.URL)
+
+	reqCtx := &pipeline.RequestContext{
+		OriginalPath: gateway.PathCompletions,
+		Body: map[string]any{
+			"model":  "test",
+			"prompt": "Hello, world!",
+		},
+	}
+
+	err := step.Execute(context.Background(), reqCtx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if receivedPath != gateway.PathCompletions+"/render" {
+		t.Fatalf("expected %s/render, got %s", gateway.PathCompletions, receivedPath)
+	}
+	if len(reqCtx.TokenIDs) != 3 {
+		t.Fatalf("expected 3 token_ids, got %d", len(reqCtx.TokenIDs))
+	}
+	promptTokens, ok := reqCtx.Body["prompt"].([]int)
+	if !ok {
+		t.Fatalf("expected prompt to be replaced with []int, got %T", reqCtx.Body["prompt"])
+	}
+	if len(promptTokens) != 3 || promptTokens[0] != 1 {
+		t.Fatalf("unexpected prompt tokens: %v", promptTokens)
 	}
 }
 

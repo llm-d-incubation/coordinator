@@ -120,7 +120,6 @@ func TestDecodeStep_NonStreaming(t *testing.T) {
 			},
 		},
 		ResponseWriter: recorder,
-		Flusher:        recorder,
 	}
 
 	err = step.Execute(context.Background(), reqCtx)
@@ -182,7 +181,6 @@ func TestDecodeStep_Streaming(t *testing.T) {
 		KVTransferParams: map[string]any{},
 		Body:             map[string]any{"model": "test", "stream": true},
 		ResponseWriter:   recorder,
-		Flusher:          recorder,
 	}
 
 	err := step.Execute(context.Background(), reqCtx)
@@ -229,7 +227,6 @@ func TestDecodeStep_GatewayError(t *testing.T) {
 		KVTransferParams: map[string]any{},
 		Body:             map[string]any{"model": "test", "stream": false},
 		ResponseWriter:   recorder,
-		Flusher:          recorder,
 	}
 
 	err := step.Execute(context.Background(), reqCtx)

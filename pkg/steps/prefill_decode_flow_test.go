@@ -56,7 +56,7 @@ func TestKVTransferParams_FlowFromPrefillToDecode(t *testing.T) {
 
 	reqCtx := &pipeline.RequestContext{
 		RequestID:    "test-flow",
-		OriginalPath: "/v1/chat/completions",
+		OriginalPath: gateway.PathChatCompletions,
 		Model:        "llama-3",
 		Stream:       false,
 		TokenIDs:     []int{1, 32000, 32000, 32000, 2345},
@@ -99,7 +99,6 @@ func TestKVTransferParams_FlowFromPrefillToDecode(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	reqCtx.ResponseWriter = recorder
-	reqCtx.Flusher = recorder
 
 	err = decodeStep.Execute(context.Background(), reqCtx)
 	if err != nil {

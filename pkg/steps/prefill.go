@@ -115,10 +115,14 @@ func (s *PrefillStep) Execute(ctx context.Context, reqCtx *pipeline.RequestConte
 }
 
 func (s *PrefillStep) resolveFormat(reqCtx *pipeline.RequestContext) gateway.RequestFormat {
+	detected := gateway.DetectFormat(reqCtx.OriginalPath)
+	if detected == gateway.FormatCompletions {
+		return gateway.FormatCompletions
+	}
 	if !s.useOpenAIFormat {
 		return gateway.FormatGenerate
 	}
-	return gateway.DetectFormat(reqCtx.OriginalPath)
+	return detected
 }
 
 func (s *PrefillStep) buildPrefillBody(reqCtx *pipeline.RequestContext, features map[string]any, format gateway.RequestFormat) map[string]any {

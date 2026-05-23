@@ -141,8 +141,12 @@ func (s *ConditionalDecodeStep) prepareBody(reqCtx *pipeline.RequestContext, bod
 }
 
 func (s *ConditionalDecodeStep) resolveFormat(reqCtx *pipeline.RequestContext) gateway.RequestFormat {
+	detected := gateway.DetectFormat(reqCtx.OriginalPath)
+	if detected == gateway.FormatCompletions {
+		return gateway.FormatCompletions
+	}
 	if !s.useOpenAIFormat {
 		return gateway.FormatGenerate
 	}
-	return gateway.DetectFormat(reqCtx.OriginalPath)
+	return detected
 }

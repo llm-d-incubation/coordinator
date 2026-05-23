@@ -98,14 +98,13 @@ func TestTextOnlyRequest_SkipsMediaDownloadAndEncode(t *testing.T) {
 
 	reqCtx := &pipeline.RequestContext{
 		RequestID:        "text-only-test",
-		OriginalPath:     "/v1/chat/completions",
+		OriginalPath:     gateway.PathChatCompletions,
 		OriginalBody:     mustJSON(body),
 		Body:             body,
 		Model:            "llama-3",
 		Stream:           false,
 		KVTransferParams: make(map[string]any),
 		ResponseWriter:   recorder,
-		Flusher:          recorder,
 	}
 
 	err := p.Execute(t.Context(), reqCtx)

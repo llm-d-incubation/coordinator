@@ -104,10 +104,14 @@ func (s *DecodeStep) prepareDecodeBody(reqCtx *pipeline.RequestContext) {
 }
 
 func (s *DecodeStep) resolveFormat(reqCtx *pipeline.RequestContext) gateway.RequestFormat {
+	detected := gateway.DetectFormat(reqCtx.OriginalPath)
+	if detected == gateway.FormatCompletions {
+		return gateway.FormatCompletions
+	}
 	if !s.useOpenAIFormat {
 		return gateway.FormatGenerate
 	}
-	return gateway.DetectFormat(reqCtx.OriginalPath)
+	return detected
 }
 
 func (s *DecodeStep) injectTokensField(reqCtx *pipeline.RequestContext) {

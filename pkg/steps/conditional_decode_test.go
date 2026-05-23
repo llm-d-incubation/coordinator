@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	testChatCompletionsPath = "/v1/chat/completions"
+	testChatCompletionsPath = gateway.PathChatCompletions
 	testModelName           = "test-model"
 )
 
@@ -57,7 +57,6 @@ func TestConditionalDecodeStep_CacheHit(t *testing.T) {
 		Body:           map[string]any{"model": testModelName, "stream": false, "messages": []any{}},
 		TokenIDs:       []int{1, 2345, 6789},
 		ResponseWriter: recorder,
-		Flusher:        recorder,
 	}
 
 	err = step.Execute(context.Background(), reqCtx)
@@ -127,7 +126,6 @@ func TestConditionalDecodeStep_CacheHit_Streaming(t *testing.T) {
 		OriginalPath:   testChatCompletionsPath,
 		Body:           map[string]any{"model": "test", "stream": true},
 		ResponseWriter: recorder,
-		Flusher:        recorder,
 	}
 
 	err := step.Execute(context.Background(), reqCtx)
@@ -167,7 +165,6 @@ func TestConditionalDecodeStep_CacheMiss_412(t *testing.T) {
 		OriginalPath:   testChatCompletionsPath,
 		Body:           map[string]any{"model": "test"},
 		ResponseWriter: recorder,
-		Flusher:        recorder,
 	}
 
 	err := step.Execute(context.Background(), reqCtx)
@@ -202,7 +199,6 @@ func TestConditionalDecodeStep_ServerError(t *testing.T) {
 		OriginalPath:   testChatCompletionsPath,
 		Body:           map[string]any{"model": "test"},
 		ResponseWriter: recorder,
-		Flusher:        recorder,
 	}
 
 	err := step.Execute(context.Background(), reqCtx)

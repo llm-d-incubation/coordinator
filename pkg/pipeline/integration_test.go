@@ -100,7 +100,7 @@ func TestFullPipeline_AllConnectorCombinations(t *testing.T) {
 
 			stepConfigs := []config.StepConfig{
 				{Type: "replace-media-urls", Params: map[string]any{"download_timeout": "5s"}},
-				{Type: "render", Params: map[string]any{"endpoint": "/v1/chat/completions/render"}},
+				{Type: "render", Params: map[string]any{"endpoint": gateway.PathChatCompletions + "/render"}},
 				{Type: "encode", Params: map[string]any{"use_openai_format": false, steps.ParamECConnector: tc.ecConnector}},
 				{Type: "prefill", Params: map[string]any{"use_openai_format": false, steps.ParamKVConnector: tc.kvConnector, steps.ParamECConnector: tc.ecConnector}},
 				{Type: "decode", Params: map[string]any{"use_openai_format": false, steps.ParamKVConnector: tc.kvConnector}},
@@ -134,12 +134,11 @@ func TestFullPipeline_AllConnectorCombinations(t *testing.T) {
 			recorder := httptest.NewRecorder()
 			reqCtx := &pipeline.RequestContext{
 				RequestID:        "test-" + tc.kvConnector + "+" + tc.ecConnector,
-				OriginalPath:     "/v1/chat/completions",
+				OriginalPath:     gateway.PathChatCompletions,
 				OriginalBody:     []byte(requestBody),
 				Model:            "test-model",
 				KVTransferParams: make(map[string]any),
 				ResponseWriter:   recorder,
-				Flusher:          recorder,
 			}
 			_ = json.Unmarshal([]byte(requestBody), &reqCtx.Body)
 
@@ -244,7 +243,7 @@ func TestFullPipeline_Integration(t *testing.T) {
 
 	stepConfigs := []config.StepConfig{
 		{Type: "replace-media-urls", Params: map[string]any{"download_timeout": "5s"}},
-		{Type: "render", Params: map[string]any{"endpoint": "/v1/chat/completions/render"}},
+		{Type: "render", Params: map[string]any{"endpoint": gateway.PathChatCompletions + "/render"}},
 		{Type: "encode", Params: map[string]any{"use_openai_format": false, steps.ParamECConnector: ec.NIXLv2}},
 		{Type: "prefill", Params: map[string]any{"use_openai_format": false, steps.ParamECConnector: ec.NIXLv2}},
 		{Type: "decode", Params: map[string]any{"use_openai_format": false}},
@@ -288,13 +287,12 @@ func TestFullPipeline_Integration(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	reqCtx := &pipeline.RequestContext{
 		RequestID:        "test-123",
-		OriginalPath:     "/v1/chat/completions",
+		OriginalPath:     gateway.PathChatCompletions,
 		OriginalBody:     []byte(requestBody),
 		Stream:           false,
 		Model:            "test-model",
 		KVTransferParams: make(map[string]any),
 		ResponseWriter:   recorder,
-		Flusher:          recorder,
 	}
 
 	_ = json.Unmarshal([]byte(requestBody), &reqCtx.Body)

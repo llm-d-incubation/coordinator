@@ -147,12 +147,11 @@ func TestDecodeStep_ConnectorShapesDecodeBody(t *testing.T) {
 			recorder := httptest.NewRecorder()
 			reqCtx := &pipeline.RequestContext{
 				RequestID:        "req",
-				OriginalPath:     "/v1/chat/completions",
+				OriginalPath:     gateway.PathChatCompletions,
 				Model:            "m",
 				KVTransferParams: map[string]any{"block_id": "from-prefill"},
 				Body:             map[string]any{"model": "m"},
 				ResponseWriter:   recorder,
-				Flusher:          recorder,
 			}
 			if err := step.Execute(context.Background(), reqCtx); err != nil {
 				t.Fatalf("Execute: %v", err)

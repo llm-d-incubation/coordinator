@@ -3,6 +3,8 @@ package gateway
 import "strings"
 
 const (
+	PathChatCompletions = "/v1/chat/completions"
+	PathCompletions     = "/v1/completions"
 	DefaultGeneratePath = "/inference/v1/generate"
 
 	EPPPhaseHeader = "EPP-Phase"
@@ -21,10 +23,10 @@ const (
 )
 
 func DetectFormat(path string) RequestFormat {
-	if strings.Contains(path, "/v1/chat/completions") {
+	if strings.Contains(path, PathChatCompletions) {
 		return FormatChatCompletions
 	}
-	if strings.Contains(path, "/v1/completions") {
+	if strings.Contains(path, PathCompletions) {
 		return FormatCompletions
 	}
 	return FormatGenerate
@@ -33,9 +35,9 @@ func DetectFormat(path string) RequestFormat {
 func PathForFormat(format RequestFormat) string {
 	switch format {
 	case FormatChatCompletions:
-		return "/v1/chat/completions"
+		return PathChatCompletions
 	case FormatCompletions:
-		return "/v1/completions"
+		return PathCompletions
 	default:
 		return DefaultGeneratePath
 	}
