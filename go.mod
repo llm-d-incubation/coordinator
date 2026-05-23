@@ -7,7 +7,7 @@ toolchain go1.25.10
 require (
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/google/uuid v1.6.0
-	github.com/llm-d/llm-d-inference-scheduler v0.4.0-rc.1.0.20260516103606-190d5d4cc66c
+	github.com/llm-d/llm-d-router v0.4.0-rc.1.0.20260522184222-bd8dddeeabd3
 	github.com/spf13/pflag v1.0.10
 	github.com/spf13/viper v1.21.0
 	golang.org/x/sync v0.20.0
@@ -72,10 +72,10 @@ require (
 	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af // indirect
 	gopkg.in/evanphx/json-patch.v4 v4.13.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
-	k8s.io/api v0.35.4 // indirect
-	k8s.io/apiextensions-apiserver v0.35.4 // indirect
-	k8s.io/apimachinery v0.35.4 // indirect
-	k8s.io/client-go v0.35.4 // indirect
+	k8s.io/api v0.35.5 // indirect
+	k8s.io/apiextensions-apiserver v0.35.5 // indirect
+	k8s.io/apimachinery v0.35.5 // indirect
+	k8s.io/client-go v0.35.5 // indirect
 	k8s.io/klog/v2 v2.140.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20260127142750-a19766b6e2d4 // indirect
 	k8s.io/utils v0.0.0-20260210185600-b8788abfbbc2 // indirect
