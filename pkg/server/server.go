@@ -7,23 +7,47 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	ctrl "sigs.k8s.io/controller-runtime"
 
+	logutil "github.com/llm-d/llm-d-router/pkg/common/observability/logging"
+
 	"github.com/llm-d/coordinator/pkg/config"
 	"github.com/llm-d/coordinator/pkg/pipeline"
 )
 
 var serverLog = ctrl.Log.WithName("server")
 
-func logHeaders(next http.Handler) http.Handler {
+var (
+	loggedRequestHeaders  = []string{"Content-Type", "X-Request-ID", "EPP-Phase", "Prefer"}
+	loggedResponseHeaders = []string{"Content-Type", "X-Request-ID"}
+)
+
+func pickHeaders(h http.Header, names []string) map[string]string {
+	out := make(map[string]string, len(names))
+	for _, n := range names {
+		if v := h.Get(n); v != "" {
+			out[n] = v
+		}
+	}
+	return out
+}
+
+func logRequestResponse(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		serverLog.Info("request headers",
+		log := serverLog.V(logutil.DEBUG)
+		if !log.Enabled() {
+			next.ServeHTTP(w, r)
+			return
+		}
+		log.Info("request",
 			"method", r.Method,
 			"path", r.URL.Path,
-			"headers", r.Header)
-		next.ServeHTTP(w, r)
-		serverLog.Info("response headers",
+			"headers", pickHeaders(r.Header, loggedRequestHeaders))
+		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+		next.ServeHTTP(ww, r)
+		log.Info("response",
 			"method", r.Method,
 			"path", r.URL.Path,
-			"headers", w.Header())
+			"status", ww.Status(),
+			"headers", pickHeaders(ww.Header(), loggedResponseHeaders))
 	})
 }
 
@@ -39,7 +63,7 @@ func New(cfg config.ServerConfig, p *pipeline.Pipeline) *Server {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
-	r.Use(logHeaders)
+	r.Use(logRequestResponse)
 
 	r.Post("/v1/chat/completions", s.handleChatCompletions)
 	r.Post("/v1/completions", s.handleCompletions)
