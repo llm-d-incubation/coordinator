@@ -169,9 +169,9 @@ func (s *RenderStep) executeChatCompletions(ctx context.Context, reqCtx *pipelin
 
 	reqCtx.TokenIDs = renderResp.TokenIDs
 
-	imageHashes := renderResp.Features.MMHashes["image"]
-	imagePlaceholders := renderResp.Features.MMPlaceholders["image"]
-	imageKwargs := renderResp.Features.KwargsData["image"]
+	imageHashes := renderResp.Features.MMHashes[ModalityImage]
+	imagePlaceholders := renderResp.Features.MMPlaceholders[ModalityImage]
+	imageKwargs := renderResp.Features.KwargsData[ModalityImage]
 
 	expected := len(reqCtx.MultimodalEntries)
 	if len(imageHashes) != expected {

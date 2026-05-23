@@ -26,7 +26,7 @@ func TestEncodeToPrefill_ECTransferParamsFlow(t *testing.T) {
 			_ = json.Unmarshal(body, &parsed)
 			features, _ := parsed["features"].(map[string]any)
 			mmHashes, _ := features["mm_hashes"].(map[string]any)
-			imageHashes, _ := mmHashes["image"].([]any)
+			imageHashes, _ := mmHashes[ModalityImage].([]any)
 			hash, _ := imageHashes[0].(string)
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"ec_transfer_params": map[string]any{
@@ -100,7 +100,7 @@ func TestEncodeToPrefill_ECTransferParamsFlow(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected ec_transfer_params map, got %T", prefillBody["ec_transfer_params"])
 	}
-	imageList, ok := ecParams["image"].([]any)
+	imageList, ok := ecParams[ModalityImage].([]any)
 	if !ok {
 		t.Fatalf("ec_transfer_params.image not a list: %v", ecParams)
 	}
@@ -125,14 +125,14 @@ func TestEncodeToPrefill_ECTransferParamsFlow(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected kwargs_data map in prefill, got %T", features["kwargs_data"])
 	}
-	imageKwargs, _ := kwargsData["image"].([]any)
+	imageKwargs, _ := kwargsData[ModalityImage].([]any)
 	if len(imageKwargs) != 2 || imageKwargs[0] != "dDE=" || imageKwargs[1] != "dDI=" {
 		t.Fatalf("expected kwargs_data.image=[dDE=,dDI=], got %v", imageKwargs)
 	}
 
 	// Verify mm_hashes in features
 	mmHashes, _ := features["mm_hashes"].(map[string]any)
-	imageHashes, _ := mmHashes["image"].([]any)
+	imageHashes, _ := mmHashes[ModalityImage].([]any)
 	if len(imageHashes) != 2 {
 		t.Fatalf("expected 2 mm_hashes in prefill features, got %d", len(imageHashes))
 	}

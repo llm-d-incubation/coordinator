@@ -31,9 +31,9 @@ func TestRenderStep_ParsesFullResponse(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"token_ids": []int{1, 32000, 32000, 32000, 32000, 32000, 32000, 2345, 6789},
 			"features": map[string]any{
-				"mm_hashes":       map[string][]string{"image": {"vllm-hash-a", "vllm-hash-b"}},
-				"mm_placeholders": map[string][]any{"image": {map[string]any{"offset": 1, "length": 3}, map[string]any{"offset": 4, "length": 3}}},
-				"kwargs_data":     map[string][]string{"image": {"dGVuc29yLWE=", "dGVuc29yLWI="}},
+				"mm_hashes":       map[string][]string{ModalityImage: {"vllm-hash-a", "vllm-hash-b"}},
+				"mm_placeholders": map[string][]any{ModalityImage: {map[string]any{"offset": 1, "length": 3}, map[string]any{"offset": 4, "length": 3}}},
+				"kwargs_data":     map[string][]string{ModalityImage: {"dGVuc29yLWE=", "dGVuc29yLWI="}},
 			},
 		})
 	}))
@@ -99,9 +99,9 @@ func TestRenderStep_RunsEvenWithNoMultimodal(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"token_ids": []int{1, 2345, 6789},
 			"features": map[string]any{
-				"mm_hashes":       map[string][]string{"image": {}},
-				"mm_placeholders": map[string][]any{"image": {}},
-				"kwargs_data":     map[string][]string{"image": {}},
+				"mm_hashes":       map[string][]string{ModalityImage: {}},
+				"mm_placeholders": map[string][]any{ModalityImage: {}},
+				"kwargs_data":     map[string][]string{ModalityImage: {}},
 			},
 		})
 	}))

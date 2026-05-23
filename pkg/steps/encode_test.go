@@ -41,12 +41,12 @@ func TestEncodeStep_ParallelFanOut(t *testing.T) {
 			t.Errorf("expected features in encode request")
 		}
 		mmHashes, _ := features["mm_hashes"].(map[string]any)
-		imageHashes, _ := mmHashes["image"].([]any)
+		imageHashes, _ := mmHashes[ModalityImage].([]any)
 		if len(imageHashes) != 1 {
 			t.Errorf("expected 1 hash per encode request, got %d", len(imageHashes))
 		}
 		kwargsData, _ := features["kwargs_data"].(map[string]any)
-		imageKwargs, _ := kwargsData["image"].([]any)
+		imageKwargs, _ := kwargsData[ModalityImage].([]any)
 		if len(imageKwargs) != 1 {
 			t.Errorf("expected 1 kwargs_data per encode request, got %d", len(imageKwargs))
 		}
@@ -138,7 +138,7 @@ func TestEncodeStep_PartialFailure(t *testing.T) {
 		_ = json.Unmarshal(body, &parsed)
 		features, _ := parsed["features"].(map[string]any)
 		mmHashes, _ := features["mm_hashes"].(map[string]any)
-		imageHashes, _ := mmHashes["image"].([]any)
+		imageHashes, _ := mmHashes[ModalityImage].([]any)
 		hash, _ := imageHashes[0].(string)
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"ec_transfer_params": map[string]any{
@@ -185,7 +185,7 @@ func TestEncodeStep_ChatCompletionsFormat(t *testing.T) {
 		tokens, _ := receivedBody["tokens"].(map[string]any)
 		features, _ := tokens["features"].(map[string]any)
 		mmHashes, _ := features["mm_hashes"].(map[string]any)
-		imageHashes, _ := mmHashes["image"].([]any)
+		imageHashes, _ := mmHashes[ModalityImage].([]any)
 		hash, _ := imageHashes[0].(string)
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"ec_transfer_params": map[string]any{
@@ -292,7 +292,7 @@ func TestEncodeStep_BuildsCorrectTokenIDs(t *testing.T) {
 		receivedTokenIDs, _ = parsed["token_ids"].([]any)
 		features, _ := parsed["features"].(map[string]any)
 		mmHashes, _ := features["mm_hashes"].(map[string]any)
-		imageHashes, _ := mmHashes["image"].([]any)
+		imageHashes, _ := mmHashes[ModalityImage].([]any)
 		hash, _ := imageHashes[0].(string)
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"ec_transfer_params": map[string]any{

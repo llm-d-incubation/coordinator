@@ -38,7 +38,7 @@ func TestGatewayPaths_EncodePrefillDecode(t *testing.T) {
 			tokens, _ := parsed["tokens"].(map[string]any)
 			features, _ := tokens["features"].(map[string]any)
 			mmHashes, _ := features["mm_hashes"].(map[string]any)
-			imageHashes, _ := mmHashes["image"].([]any)
+			imageHashes, _ := mmHashes[ModalityImage].([]any)
 			hash, _ := imageHashes[0].(string)
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"ec_transfer_params": map[string]any{

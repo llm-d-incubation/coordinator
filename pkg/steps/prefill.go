@@ -72,9 +72,9 @@ func (s *PrefillStep) Execute(ctx context.Context, reqCtx *pipeline.RequestConte
 	var features map[string]any
 	if len(reqCtx.MultimodalEntries) > 0 {
 		features = map[string]any{
-			"mm_hashes":       map[string][]string{"image": allHashes},
-			"mm_placeholders": map[string][]any{"image": allPlaceholders},
-			"kwargs_data":     map[string][]string{"image": allKwargsData},
+			"mm_hashes":       map[string][]string{ModalityImage: allHashes},
+			"mm_placeholders": map[string][]any{ModalityImage: allPlaceholders},
+			"kwargs_data":     map[string][]string{ModalityImage: allKwargsData},
 		}
 	}
 

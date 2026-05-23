@@ -167,8 +167,8 @@ func (s *EncodeStep) buildEncodeBody(reqCtx *pipeline.RequestContext, tokenIDs [
 			"tokens": map[string]any{
 				"token_ids": tokenIDs,
 				"features": map[string]any{
-					"mm_hashes":       map[string][]string{"image": {entry.Hash}},
-					"mm_placeholders": map[string][]any{"image": {map[string]any{"offset": 1, "length": entry.Placeholder.Length}}},
+					"mm_hashes":       map[string][]string{ModalityImage: {entry.Hash}},
+					"mm_placeholders": map[string][]any{ModalityImage: {map[string]any{"offset": 1, "length": entry.Placeholder.Length}}},
 				},
 			},
 			"sampling_params": map[string]any{"max_tokens": 1},
@@ -178,9 +178,9 @@ func (s *EncodeStep) buildEncodeBody(reqCtx *pipeline.RequestContext, tokenIDs [
 		return map[string]any{
 			"token_ids": tokenIDs,
 			"features": map[string]any{
-				"mm_hashes":       map[string][]string{"image": {entry.Hash}},
-				"mm_placeholders": map[string][]any{"image": {map[string]any{"offset": 1, "length": entry.Placeholder.Length}}},
-				"kwargs_data":     map[string][]string{"image": {entry.KwargsData}},
+				"mm_hashes":       map[string][]string{ModalityImage: {entry.Hash}},
+				"mm_placeholders": map[string][]any{ModalityImage: {map[string]any{"offset": 1, "length": entry.Placeholder.Length}}},
+				"kwargs_data":     map[string][]string{ModalityImage: {entry.KwargsData}},
 			},
 			"sampling_params": map[string]any{"max_tokens": 1},
 		}

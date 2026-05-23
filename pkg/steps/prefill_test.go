@@ -91,7 +91,7 @@ func TestPrefillStep_SendsCorrectGenerateRequest(t *testing.T) {
 		t.Fatal("expected features in prefill request")
 	}
 	mmHashes, _ := features["mm_hashes"].(map[string]any)
-	imageHashes, _ := mmHashes["image"].([]any)
+	imageHashes, _ := mmHashes[ModalityImage].([]any)
 	if len(imageHashes) != 2 {
 		t.Fatalf("expected 2 mm_hashes, got %d", len(imageHashes))
 	}
@@ -104,7 +104,7 @@ func TestPrefillStep_SendsCorrectGenerateRequest(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected kwargs_data map in prefill, got %T", features["kwargs_data"])
 	}
-	imageKwargs, _ := kwargsData["image"].([]any)
+	imageKwargs, _ := kwargsData[ModalityImage].([]any)
 	if len(imageKwargs) != 2 || imageKwargs[0] != "dGVuc29yLWE=" || imageKwargs[1] != "dGVuc29yLWI=" {
 		t.Fatalf("expected kwargs_data.image=[dGVuc29yLWE=,dGVuc29yLWI=], got %v", imageKwargs)
 	}
@@ -114,7 +114,7 @@ func TestPrefillStep_SendsCorrectGenerateRequest(t *testing.T) {
 	if !ok {
 		t.Fatal("expected ec_transfer_params in prefill request")
 	}
-	imageList, ok := ecParams["image"].([]any)
+	imageList, ok := ecParams[ModalityImage].([]any)
 	if !ok {
 		t.Fatalf("ec_transfer_params.image not a list: %v", ecParams)
 	}

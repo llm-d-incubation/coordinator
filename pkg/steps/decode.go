@@ -129,8 +129,8 @@ func (s *DecodeStep) injectTokensField(reqCtx *pipeline.RequestContext) {
 			}
 		}
 		tokens["features"] = map[string]any{
-			"mm_hashes":       map[string][]string{"image": allHashes},
-			"mm_placeholders": map[string][]any{"image": allPlaceholders},
+			"mm_hashes":       map[string][]string{ModalityImage: allHashes},
+			"mm_placeholders": map[string][]any{ModalityImage: allPlaceholders},
 		}
 	}
 	reqCtx.Body["tokens"] = tokens
