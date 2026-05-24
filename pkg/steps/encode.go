@@ -91,6 +91,8 @@ func (s *EncodeStep) Execute(ctx context.Context, reqCtx *pipeline.RequestContex
 			headers[reqcommon.RequestIDHeaderKey] = reqCtx.RequestID
 			headers[gateway.EPPPhaseHeader] = gateway.PhaseEncode
 
+			logger.V(logutil.DEBUG).Info("sub-request body", "index", i, "method", "POST", "path", path, "bodyLen", len(bodyBytes), "headers", redactedHeaders(headers))
+
 			resp, err := s.gwClient.Post(gCtx, path, bodyBytes, headers)
 			if err != nil {
 				return fmt.Errorf("encode[%d]: request: %w", i, err)
@@ -221,14 +223,6 @@ func (s *EncodeStep) buildSingleImageContent(reqCtx *pipeline.RequestContext, en
 		"type":      "image_url",
 		"image_url": map[string]any{"url": ""},
 	}
-}
-
-func copyBody(src map[string]any) map[string]any {
-	dst := make(map[string]any, len(src))
-	for k, v := range src {
-		dst[k] = v
-	}
-	return dst
 }
 
 type encodeResponse struct {
