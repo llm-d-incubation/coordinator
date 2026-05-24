@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -64,7 +65,7 @@ func (c *Client) Request(ctx context.Context, method, path string, body []byte, 
 
 	logger := log.FromContext(ctx).WithName("gateway")
 	if body != nil {
-		logger.V(logutil.TRACE).Info("request body", "method", method, "path", path, "body", redactBody(body))
+		logger.V(logutil.TRACE).Info("request body", "method", method, "path", path, "headers", req.Header, "body", redactBody(body))
 	}
 
 	resp, err := c.httpClient.Do(req)
@@ -115,7 +116,10 @@ func redactStrings(v any) any {
 	switch val := v.(type) {
 	case string:
 		if len(val) > 50 {
-			return "..."
+			if strings.HasPrefix(val, "data:") {
+				return "[base64]"
+			}
+			return "[url]"
 		}
 		return val
 	case map[string]any:
