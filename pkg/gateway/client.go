@@ -119,7 +119,10 @@ func redactStrings(v any) any {
 			if strings.HasPrefix(val, "data:") {
 				return "[base64]"
 			}
-			return "[url]"
+			if strings.HasPrefix(val, "http://") || strings.HasPrefix(val, "https://") {
+				return "[url]"
+			}
+			return "..."
 		}
 		return val
 	case map[string]any:
