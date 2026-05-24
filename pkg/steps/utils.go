@@ -18,26 +18,25 @@ func isSensitiveHeader(name string) bool {
 	return ok
 }
 
-func redactedHTTPHeaders(h http.Header) http.Header {
-	out := make(http.Header, len(h))
-	for k, v := range h {
-		if isSensitiveHeader(k) {
-			out[k] = []string{redactedValue}
-			continue
-		}
-		out[k] = v
-	}
-	return out
-}
-
-func redactedHeaders(h map[string]string) map[string]string {
+// redactedHeaders returns a flattened copy of h with values of sensitive
+// headers replaced by a redaction sentinel. Accepts either http.Header
+// (map[string][]string) or map[string]string and always returns the
+// flat form for log uniformity.
+func redactedHeaders[V string | []string](h map[string]V) map[string]string {
 	out := make(map[string]string, len(h))
 	for k, v := range h {
 		if isSensitiveHeader(k) {
 			out[k] = redactedValue
 			continue
 		}
-		out[k] = v
+		switch val := any(v).(type) {
+		case string:
+			out[k] = val
+		case []string:
+			if len(val) > 0 {
+				out[k] = val[0]
+			}
+		}
 	}
 	return out
 }

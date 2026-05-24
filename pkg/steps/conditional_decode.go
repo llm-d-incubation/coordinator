@@ -80,7 +80,7 @@ func (s *ConditionalDecodeStep) Execute(ctx context.Context, reqCtx *pipeline.Re
 	proxyReq.Header.Set(gateway.EPPPhaseHeader, gateway.PhaseDecode)
 	proxyReq.Header.Set("Prefer", "if-available")
 
-	logger.V(logutil.DEBUG).Info("request body", "method", "POST", "path", path, "bodyLen", len(bodyBytes), "headers", redactedHTTPHeaders(proxyReq.Header))
+	logger.V(logutil.DEBUG).Info("request body", "method", "POST", "path", path, "bodyLen", len(bodyBytes), "headers", redactedHeaders(proxyReq.Header))
 
 	var cacheMiss bool
 	proxy := &httputil.ReverseProxy{
