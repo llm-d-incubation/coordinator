@@ -11,7 +11,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/llm-d/coordinator/pkg/pipeline"
-	logutil "github.com/llm-d/llm-d-router/pkg/common/observability/logging"
 )
 
 // DefaultKVConnectorName is the KV connector selected when an empty string is
@@ -41,13 +40,10 @@ func Build(name string) (Connector, error) {
 	}
 	switch name {
 	case NIXLv2:
-		logger.V(logutil.DEFAULT).Info("using connector", "name", name)
 		return nixlV2{}, nil
 	case SharedStorage:
-		logger.V(logutil.DEFAULT).Info("using connector", "name", name)
 		return sharedStorage{}, nil
 	case SGLang:
-		logger.V(logutil.DEFAULT).Info("using connector", "name", name)
 		return sglangKV{}, nil
 	default:
 		return nil, fmt.Errorf("unknown connector: %q", name)

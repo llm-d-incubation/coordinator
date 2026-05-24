@@ -1,9 +1,9 @@
 package main
 
 import (
-	"flag"
 	"os"
 
+	"github.com/spf13/pflag"
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	logutil "github.com/llm-d/llm-d-router/pkg/common/observability/logging"
@@ -16,8 +16,12 @@ import (
 )
 
 func main() {
-	configPath := flag.String("config", "configs/coordinator.yaml", "path to configuration file")
-	flag.Parse()
+	configPath := pflag.String("config", "configs/coordinator.yaml", "path to configuration file")
+
+	logOpts := logutil.NewOptions()
+	logOpts.AddFlags(pflag.CommandLine)
+
+	pflag.Parse()
 
 	logutil.InitSetupLogging()
 	log := ctrl.Log.WithName("coordinator")
@@ -27,6 +31,24 @@ func main() {
 		log.Error(err, "failed to load config")
 		os.Exit(1)
 	}
+
+	// CLI -v wins over config log_level.
+	if vFlag := pflag.CommandLine.Lookup("v"); vFlag != nil && !vFlag.Changed {
+		logOpts.LogVerbosity = cfg.LogLevel
+	}
+	if err := logOpts.Validate(); err != nil {
+		log.Error(err, "invalid logging options")
+		os.Exit(1)
+	}
+	if err := logOpts.Complete(); err != nil {
+		log.Error(err, "failed to complete logging options")
+		os.Exit(1)
+	}
+	logutil.InitLogging(&logOpts.ZapOptions)
+	log.Info("log level set", "level", logOpts.LogVerbosity)
+	log.Info("pipeline connectors",
+		"kv_connector", cfg.Pipeline.KVConnector,
+		"ec_connector", cfg.Pipeline.ECConnector)
 
 	gwClient := gateway.New(cfg.Gateway)
 
