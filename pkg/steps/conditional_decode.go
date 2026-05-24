@@ -73,6 +73,9 @@ func (s *ConditionalDecodeStep) Execute(ctx context.Context, reqCtx *pipeline.Re
 	}
 	proxyReq.ContentLength = int64(len(bodyBytes))
 	proxyReq.Header.Set("Content-Type", "application/json")
+	for k, v := range reqCtx.ForwardedHeaders() {
+		proxyReq.Header.Set(k, v)
+	}
 	proxyReq.Header.Set(reqcommon.RequestIDHeaderKey, reqCtx.RequestID)
 	proxyReq.Header.Set(gateway.EPPPhaseHeader, gateway.PhaseDecode)
 	proxyReq.Header.Set("Prefer", "if-available")

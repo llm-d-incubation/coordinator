@@ -191,7 +191,7 @@ The coordinator adds the `Prefer: if-available` HTTP header to signal that the d
 POST <gateway>/v1/completions
 Content-Type: application/json
 X-Request-ID: <request_id>
-EPP-Phase: conditional-decode
+EPP-Phase: decode
 Prefer: if-available
 ```
 
@@ -215,7 +215,7 @@ If the original `prompt` is a string, it is replaced by the `token_ids` from the
 POST <gateway>/v1/chat/completions
 Content-Type: application/json
 X-Request-ID: <request_id>
-EPP-Phase: conditional-decode
+EPP-Phase: decode
 Prefer: if-available
 ```
 
@@ -840,7 +840,7 @@ Requests to `/v1/completions` follow a simplified pipeline:
 
 1. **replace-media-urls**: skipped (completions cannot contain multimedia content)
 2. **render**: skipped if `prompt` is already a token array (array of integers); otherwise runs to tokenize the text prompt
-3. **conditional-decode**: runs normally (with `EPP-Phase: conditional-decode` header)
+3. **conditional-decode**: runs normally (with `EPP-Phase: decode` header)
 4. **encode**: skipped (no images)
 5. **prefill**: sends request with `prompt` field containing the token array
 6. **decode**: sends request with `prompt` field containing the token array + `kv_transfer_params`

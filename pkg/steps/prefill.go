@@ -89,10 +89,11 @@ func (s *PrefillStep) Execute(ctx context.Context, reqCtx *pipeline.RequestConte
 	path := gateway.PathForFormat(format)
 	logger.V(logutil.DEFAULT).Info("sending request", "path", path)
 
-	resp, err := s.gwClient.Post(ctx, path, bodyBytes, map[string]string{
-		reqcommon.RequestIDHeaderKey: reqCtx.RequestID,
-		gateway.EPPPhaseHeader:       gateway.PhasePrefill,
-	})
+	headers := reqCtx.ForwardedHeaders()
+	headers[reqcommon.RequestIDHeaderKey] = reqCtx.RequestID
+	headers[gateway.EPPPhaseHeader] = gateway.PhasePrefill
+
+	resp, err := s.gwClient.Post(ctx, path, bodyBytes, headers)
 	if err != nil {
 		return fmt.Errorf("prefill: request: %w", err)
 	}

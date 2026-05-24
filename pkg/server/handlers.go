@@ -12,6 +12,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	logutil "github.com/llm-d/llm-d-router/pkg/common/observability/logging"
+	reqcommon "github.com/llm-d/llm-d-router/pkg/common/request"
 
 	"github.com/llm-d/coordinator/pkg/pipeline"
 )
@@ -46,9 +47,15 @@ func (s *Server) handleInference(w http.ResponseWriter, r *http.Request) {
 	stream, _ := parsed["stream"].(bool)
 	model, _ := parsed["model"].(string)
 
+	requestID := r.Header.Get(reqcommon.RequestIDHeaderKey)
+	if requestID == "" {
+		requestID = uuid.New().String()
+	}
+
 	reqCtx := &pipeline.RequestContext{
-		RequestID:        uuid.New().String(),
+		RequestID:        requestID,
 		OriginalPath:     r.URL.Path,
+		OriginalHeaders:  r.Header.Clone(),
 		OriginalBody:     body,
 		Body:             parsed,
 		Model:            model,

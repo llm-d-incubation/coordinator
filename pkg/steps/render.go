@@ -102,6 +102,9 @@ func (s *RenderStep) executeCompletions(ctx context.Context, reqCtx *pipeline.Re
 			return fmt.Errorf("creating render request: %w", err)
 		}
 		req.Header.Set("Content-Type", "application/json")
+		for k, v := range reqCtx.ForwardedHeaders() {
+			req.Header.Set(k, v)
+		}
 		req.Body = io.NopCloser(jsonReader(body))
 		req.ContentLength = int64(len(body))
 
@@ -148,6 +151,9 @@ func (s *RenderStep) executeChatCompletions(ctx context.Context, reqCtx *pipelin
 		return fmt.Errorf("creating render request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	for k, v := range reqCtx.ForwardedHeaders() {
+		req.Header.Set(k, v)
+	}
 	req.Body = io.NopCloser(jsonReader(body))
 	req.ContentLength = int64(len(body))
 

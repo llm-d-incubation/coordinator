@@ -87,10 +87,11 @@ func (s *EncodeStep) Execute(ctx context.Context, reqCtx *pipeline.RequestContex
 			path := gateway.PathForFormat(format)
 			logger.V(logutil.DEFAULT).Info("sending sub-request", "index", i, "path", path)
 
-			resp, err := s.gwClient.Post(gCtx, path, bodyBytes, map[string]string{
-				reqcommon.RequestIDHeaderKey: reqCtx.RequestID,
-				gateway.EPPPhaseHeader:       gateway.PhaseEncode,
-			})
+			headers := reqCtx.ForwardedHeaders()
+			headers[reqcommon.RequestIDHeaderKey] = reqCtx.RequestID
+			headers[gateway.EPPPhaseHeader] = gateway.PhaseEncode
+
+			resp, err := s.gwClient.Post(gCtx, path, bodyBytes, headers)
 			if err != nil {
 				return fmt.Errorf("encode[%d]: request: %w", i, err)
 			}
