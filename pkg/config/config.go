@@ -26,6 +26,7 @@ type GatewayConfig struct {
 	MaxIdleConnsPerHost int           `mapstructure:"max_idle_conns_per_host"`
 	IdleConnTimeout     time.Duration `mapstructure:"idle_conn_timeout"`
 	Timeout             time.Duration `mapstructure:"timeout"`
+	UseOpenAIFormat     bool          `mapstructure:"use_openai_format"`
 }
 
 type RenderingConfig struct {
@@ -47,6 +48,8 @@ type StepConfig struct {
 func Load(path string) (*Config, error) {
 	v := viper.New()
 	v.SetConfigFile(path)
+	v.SetEnvPrefix("COORDINATOR")
+	v.AutomaticEnv()
 
 	v.SetDefault("log_level", 2)
 	v.SetDefault("server.listen_addr", ":8080")
@@ -55,6 +58,7 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("gateway.max_idle_conns_per_host", 100)
 	v.SetDefault("gateway.idle_conn_timeout", 90*time.Second)
 	v.SetDefault("gateway.timeout", 60*time.Second)
+	v.SetDefault("gateway.use_openai_format", true)
 	v.SetDefault("rendering_service.timeout", 30*time.Second)
 
 	if err := v.ReadInConfig(); err != nil {

@@ -10,6 +10,7 @@ import (
 	logutil "github.com/llm-d/llm-d-router/pkg/common/observability/logging"
 
 	"github.com/llm-d/coordinator/pkg/config"
+	"github.com/llm-d/coordinator/pkg/gateway"
 	"github.com/llm-d/coordinator/pkg/pipeline"
 )
 
@@ -65,8 +66,8 @@ func New(cfg config.ServerConfig, p *pipeline.Pipeline) *Server {
 	r.Use(middleware.Recoverer)
 	r.Use(logRequestResponse)
 
-	r.Post("/v1/chat/completions", s.handleChatCompletions)
-	r.Post("/v1/completions", s.handleCompletions)
+	r.Post(gateway.PathChatCompletions, s.handleChatCompletions)
+	r.Post(gateway.PathCompletions, s.handleCompletions)
 	r.Get("/healthz", s.handleHealth)
 	r.Get("/readyz", s.handleHealth)
 
