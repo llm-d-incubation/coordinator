@@ -46,6 +46,9 @@ func TestDecodeStep_NonStreaming(t *testing.T) {
 		if kvParams["peer_host"] != "10.0.0.5" {
 			t.Errorf("kv_transfer_params.peer_host = %v, want 10.0.0.5", kvParams["peer_host"])
 		}
+		if kvParams["do_remote_decode"] != false {
+			t.Errorf("kv_transfer_params.do_remote_decode = %v, want false", kvParams["do_remote_decode"])
+		}
 		if kvParams["do_remote_prefill"] != true {
 			t.Errorf("kv_transfer_params.do_remote_prefill = %v, want true", kvParams["do_remote_prefill"])
 		}
