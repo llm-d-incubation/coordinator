@@ -146,7 +146,7 @@ func (s *PrefillStep) buildPrefillBody(reqCtx *pipeline.RequestContext, features
 			tokens["features"] = tokensFeatures
 		}
 		body["tokens"] = tokens
-		body["sampling_params"] = map[string]any{"max_tokens": 1}
+		body["max_tokens"] = 1
 		body["kv_transfer_params"] = kvParams
 		if len(ecParams) > 0 {
 			body["ec_transfer_params"] = ecParams
@@ -158,7 +158,7 @@ func (s *PrefillStep) buildPrefillBody(reqCtx *pipeline.RequestContext, features
 			"request_id":         reqCtx.RequestID,
 			"model":              reqCtx.Model,
 			"prompt":             reqCtx.TokenIDs,
-			"sampling_params":    map[string]any{"max_tokens": 1},
+			"max_tokens":         1,
 			"kv_transfer_params": kvParams,
 		}
 		if features != nil {

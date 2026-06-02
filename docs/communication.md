@@ -362,7 +362,7 @@ For image 0:
       "mm_placeholders": {"image": [{"offset": 1, "length": 3}]}
     }
   },
-  "sampling_params": {"max_tokens": 1}
+  "max_tokens": 1
 }
 ```
 
@@ -559,7 +559,7 @@ EPP-Phase: prefill
     ]
   },
   "kv_transfer_params": {"do_remote_decode": true},
-  "sampling_params": {"max_tokens": 1}
+  "max_tokens": 1
 }
 ```
 
@@ -601,7 +601,7 @@ EPP-Phase: prefill
   "model": "llava-v1.5-7b",
   "prompt": [1, 2345, 6789, 101, 202, 303],
   "kv_transfer_params": {"do_remote_decode": true},
-  "sampling_params": {"max_tokens": 1}
+  "max_tokens": 1
 }
 ```
 
@@ -821,7 +821,7 @@ The `use_openai_format` setting (environment variable: `COORDINATOR_GATEWAY_USE_
 | User's original path | Encode format | Prefill format | Decode format |
 |---------------------|---------------|----------------|---------------|
 | `/v1/chat/completions` | Per-image body + `tokens` field | Original body + `tokens` + `ec_transfer_params` + `kv_transfer_params` | Original body + `tokens` + `kv_transfer_params` |
-| `/v1/completions` | N/A (no images) | `{"prompt": [...], "kv_transfer_params": {...}, ...}` | `{"prompt": [...], "kv_transfer_params": {...}, ...}` |
+| `/v1/completions` | N/A (no images) | `{"prompt": [...], "max_tokens": 1, "kv_transfer_params": {...}, ...}` | `{"prompt": [...], "kv_transfer_params": {...}, ...}` |
 
 When `use_openai_format: false`:
 
