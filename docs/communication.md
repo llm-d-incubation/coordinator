@@ -419,7 +419,7 @@ Sends a single prefill request with the full token sequence, all image metadata,
 Two request formats are supported (see [Request Format Configuration](#request-format-configuration)).
 
 **Common notes:**
-- `ec_transfer_params` is structured as per-modality: `{"image": [params_0, params_1, ...]}`
+- `ec_transfer_params` is a flat map keyed by mm_hash (same format as the encode response), merging all per-image entries from the encode stage
 - `kv_transfer_params.do_remote_decode = true` tells the prefill worker to store KV cache for remote decode
 - `mm_placeholders` use the original offsets from the render response (positions in the full token sequence)
 
@@ -450,10 +450,8 @@ EPP-Phase: prefill
     "kwargs_data": {"image": ["<base64-encoded-pixel-tensor-1>", "<base64-encoded-pixel-tensor-2>"]}
   },
   "ec_transfer_params": {
-    "image": [
-      {"abc123hash": {"peer_host": "10.0.0.1", "peer_port": 5501, "size_bytes": 2359296, "nixl_agent_metadata_b64": "TklYTA..."}},
-      {"def456hash": {"peer_host": "10.0.0.2", "peer_port": 5502, "size_bytes": 2359296, "nixl_agent_metadata_b64": "QWdlbnQ..."}}
-    ]
+    "abc123hash": {"peer_host": "10.0.0.1", "peer_port": 5501, "size_bytes": 2359296, "nixl_agent_metadata_b64": "TklYTA..."},
+    "def456hash": {"peer_host": "10.0.0.2", "peer_port": 5502, "size_bytes": 2359296, "nixl_agent_metadata_b64": "QWdlbnQ..."}
   },
   "kv_transfer_params": {"do_remote_decode": true},
   "sampling_params": {"max_tokens": 1}
@@ -486,10 +484,8 @@ EPP-Phase: prefill
     "kwargs_data": {"image": ["<base64-encoded-pixel-tensor-1>", "<base64-encoded-pixel-tensor-2>"]}
   },
   "ec_transfer_params": {
-    "image": [
-      {"abc123hash": {"peer_host": "10.0.0.1", "peer_port": 5501, "size_bytes": 2359296, "nixl_agent_metadata_b64": "TklYTA..."}},
-      {"def456hash": {"peer_host": "10.0.0.2", "peer_port": 5502, "size_bytes": 2359296, "nixl_agent_metadata_b64": "QWdlbnQ..."}}
-    ]
+    "abc123hash": {"peer_host": "10.0.0.1", "peer_port": 5501, "size_bytes": 2359296, "nixl_agent_metadata_b64": "TklYTA..."},
+    "def456hash": {"peer_host": "10.0.0.2", "peer_port": 5502, "size_bytes": 2359296, "nixl_agent_metadata_b64": "QWdlbnQ..."}
   },
   "sampling_params": {"max_tokens": 1, "extra_args": {"kv_transfer_params":{"do_remote_decode": true}}}
 }
@@ -553,10 +549,8 @@ EPP-Phase: prefill
     }
   },
   "ec_transfer_params": {
-    "image": [
-      {"abc123hash": {"peer_host": "10.0.0.1", "peer_port": 5501, "size_bytes": 2359296, "nixl_agent_metadata_b64": "TklYTA..."}},
-      {"def456hash": {"peer_host": "10.0.0.2", "peer_port": 5502, "size_bytes": 2359296, "nixl_agent_metadata_b64": "QWdlbnQ..."}}
-    ]
+    "abc123hash": {"peer_host": "10.0.0.1", "peer_port": 5501, "size_bytes": 2359296, "nixl_agent_metadata_b64": "TklYTA..."},
+    "def456hash": {"peer_host": "10.0.0.2", "peer_port": 5502, "size_bytes": 2359296, "nixl_agent_metadata_b64": "QWdlbnQ..."}
   },
   "kv_transfer_params": {"do_remote_decode": true},
   "max_tokens": 1
