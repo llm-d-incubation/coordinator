@@ -205,7 +205,14 @@ func parseDataURI(uri string) (contentType, b64 string, err error) {
 		return "", "", errors.New("missing comma in data URI")
 	}
 	ct, params, _ := strings.Cut(meta, ";")
-	if !strings.Contains(params, "base64") {
+	hasBase64 := false
+	for _, p := range strings.Split(params, ";") {
+		if strings.EqualFold(strings.TrimSpace(p), "base64") {
+			hasBase64 = true
+			break
+		}
+	}
+	if !hasBase64 {
 		return "", "", errors.New("data URI must be base64-encoded")
 	}
 	if ct == "" {
