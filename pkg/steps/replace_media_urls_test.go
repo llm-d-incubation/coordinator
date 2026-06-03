@@ -2,6 +2,7 @@ package steps
 
 import (
 	"context"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -155,6 +156,84 @@ func TestReplaceMediaURLsStep_DataURIInput(t *testing.T) {
 	imgPart := content[1].(map[string]any)["image_url"].(map[string]any)
 	if imgPart["url"].(string) != dataURI {
 		t.Fatalf("expected url unchanged, got %s", imgPart["url"])
+	}
+}
+
+// MultimodalEntry.Index must reflect the position of each image in the
+// request, regardless of whether it came from a download or an inline
+// data: URI. EncodeStep.buildSingleImageContent indexes by entry.Index so
+// drift would associate hashes/placeholders with the wrong image. Asserted
+// in both source orderings.
+func TestReplaceMediaURLsStep_MixedHTTPAndDataURIOrdering(t *testing.T) {
+	imageServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write([]byte("downloaded-image-bytes"))
+	}))
+	defer imageServer.Close()
+
+	const dataURI = "data:image/jpeg;base64,SU5MSU5F"
+	httpURL := imageServer.URL + "/img.png"
+
+	httpPart := map[string]any{"type": "image_url", "image_url": map[string]any{"url": httpURL}}
+	dataPart := map[string]any{"type": "image_url", "image_url": map[string]any{"url": dataURI}}
+
+	type want struct {
+		contentType string
+		base64Data  string
+	}
+	tests := []struct {
+		name  string
+		parts []any
+		want  []want
+	}{
+		{
+			name:  "http then data",
+			parts: []any{httpPart, dataPart},
+			want: []want{
+				{contentType: "image/png", base64Data: base64.StdEncoding.EncodeToString([]byte("downloaded-image-bytes"))},
+				{contentType: "image/jpeg", base64Data: "SU5MSU5F"},
+			},
+		},
+		{
+			name:  "data then http",
+			parts: []any{dataPart, httpPart},
+			want: []want{
+				{contentType: "image/jpeg", base64Data: "SU5MSU5F"},
+				{contentType: "image/png", base64Data: base64.StdEncoding.EncodeToString([]byte("downloaded-image-bytes"))},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			step, _ := NewReplaceMediaURLsStep(map[string]any{})
+			reqCtx := &pipeline.RequestContext{
+				Body: map[string]any{
+					"messages": []any{
+						map[string]any{"role": "user", "content": tt.parts},
+					},
+				},
+			}
+
+			if err := step.Execute(context.Background(), reqCtx); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(reqCtx.MultimodalEntries) != len(tt.want) {
+				t.Fatalf("expected %d multimodal entries, got %d", len(tt.want), len(reqCtx.MultimodalEntries))
+			}
+			for i, w := range tt.want {
+				got := reqCtx.MultimodalEntries[i]
+				if got.Index != i {
+					t.Errorf("entry[%d].Index = %d, want %d", i, got.Index, i)
+				}
+				if got.ContentType != w.contentType {
+					t.Errorf("entry[%d].ContentType = %q, want %q", i, got.ContentType, w.contentType)
+				}
+				if got.Base64Data != w.base64Data {
+					t.Errorf("entry[%d].Base64Data = %q, want %q", i, got.Base64Data, w.base64Data)
+				}
+			}
+		})
 	}
 }
 
