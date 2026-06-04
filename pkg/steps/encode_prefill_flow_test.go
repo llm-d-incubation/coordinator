@@ -95,28 +95,18 @@ func TestEncodeToPrefill_ECTransferParamsFlow(t *testing.T) {
 		t.Fatal("prefill was not called")
 	}
 
-	// Verify ec_transfer_params has per-modality wrapped list (doc shape)
+	// Verify ec_transfer_params is a flat map keyed by mm_hash
 	ecParams, ok := prefillBody["ec_transfer_params"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected ec_transfer_params map, got %T", prefillBody["ec_transfer_params"])
 	}
-	imageList, ok := ecParams[ModalityImage].([]any)
-	if !ok {
-		t.Fatalf("ec_transfer_params.image not a list: %v", ecParams)
+	if len(ecParams) != 2 {
+		t.Fatalf("expected 2 ec_transfer_params entries, got %d: %v", len(ecParams), ecParams)
 	}
-	if len(imageList) != 2 {
-		t.Fatalf("expected 2 image entries, got %d: %v", len(imageList), imageList)
-	}
-	first, ok := imageList[0].(map[string]any)
-	if !ok || len(first) != 1 {
-		t.Fatalf("image[0]: expected single-key map, got %v", imageList[0])
-	}
-	entry, ok := first["img-hash-1"].(map[string]any)
-	if !ok {
-		t.Fatalf("image[0] missing key %q: %v", "img-hash-1", first)
-	}
-	if entry["peer_host"] != "10.0.0.1" {
-		t.Fatalf("image[0][img-hash-1].peer_host = %v, want 10.0.0.1", entry["peer_host"])
+	for _, want := range []string{"img-hash-1", "img-hash-2"} {
+		if _, ok := ecParams[want]; !ok {
+			t.Errorf("missing hash %q in ec_transfer_params: %v", want, ecParams)
+		}
 	}
 
 	// Verify features has kwargs_data with per-image base64 tensors

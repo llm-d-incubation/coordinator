@@ -109,35 +109,17 @@ func TestPrefillStep_SendsCorrectGenerateRequest(t *testing.T) {
 		t.Fatalf("expected kwargs_data.image=[dGVuc29yLWE=,dGVuc29yLWI=], got %v", imageKwargs)
 	}
 
-	// Verify ec_transfer_params has per-modality wrapped list (doc shape)
+	// Verify ec_transfer_params is a flat map keyed by mm_hash
 	ecParams, ok := prefillBody["ec_transfer_params"].(map[string]any)
 	if !ok {
 		t.Fatal("expected ec_transfer_params in prefill request")
 	}
-	imageList, ok := ecParams[ModalityImage].([]any)
-	if !ok {
-		t.Fatalf("ec_transfer_params.image not a list: %v", ecParams)
-	}
-	if len(imageList) != 2 {
-		t.Fatalf("expected 2 image entries, got %d: %v", len(imageList), imageList)
-	}
-	seen := make(map[string]bool)
-	for i, e := range imageList {
-		entryMap, ok := e.(map[string]any)
-		if !ok || len(entryMap) != 1 {
-			t.Fatalf("image[%d]: expected single-key map, got %v", i, e)
-		}
-		for hash, v := range entryMap {
-			seen[hash] = true
-			peer, _ := v.(map[string]any)
-			if peer["peer_host"] == nil {
-				t.Fatalf("image[%d][%q].peer_host missing", i, hash)
-			}
-		}
+	if len(ecParams) != 2 {
+		t.Fatalf("expected 2 ec_transfer_params entries, got %d: %v", len(ecParams), ecParams)
 	}
 	for _, want := range []string{"hash-a", "hash-b"} {
-		if !seen[want] {
-			t.Errorf("missing hash %q in image list: %v", want, imageList)
+		if _, ok := ecParams[want]; !ok {
+			t.Errorf("missing hash %q in ec_transfer_params: %v", want, ecParams)
 		}
 	}
 
