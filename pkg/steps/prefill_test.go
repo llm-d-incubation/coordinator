@@ -42,7 +42,7 @@ func TestPrefillStep_SendsCorrectGenerateRequest(t *testing.T) {
 
 	step, err := NewPrefillStep(map[string]any{
 		"use_openai_format": false,
-		ParamECConnector:    ec.NIXLv2,
+		ParamECConnector:    ec.NIXL,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -58,8 +58,8 @@ func TestPrefillStep_SendsCorrectGenerateRequest(t *testing.T) {
 			{Index: 1, Hash: "hash-b", KwargsData: "dGVuc29yLWI=", Placeholder: pipeline.PlaceholderRange{Offset: 4, Length: 3}},
 		},
 		ECTransferParams: []map[string]any{
-			{"hash-a": map[string]any{"peer_host": "10.0.0.1", "peer_port": 5501}},
-			{"hash-b": map[string]any{"peer_host": "10.0.0.2", "peer_port": 5502}},
+			{"hash-a": map[string]any{"peer_port": 5501, "size_bytes": 1228800, "nixl_agent_metadata_b64": "bml4..."}},
+			{"hash-b": map[string]any{"peer_port": 5502, "size_bytes": 1228800, "nixl_agent_metadata_b64": "QWdlbnQ..."}},
 		},
 		KVTransferParams: make(map[string]any),
 	}
@@ -233,7 +233,7 @@ func TestPrefillStep_ChatCompletionsFormat(t *testing.T) {
 
 	gwClient := gateway.New(config.GatewayConfig{Address: server.URL})
 	step, err := NewPrefillStep(map[string]any{
-		ParamECConnector: ec.NIXLv2,
+		ParamECConnector: ec.NIXL,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -256,7 +256,7 @@ func TestPrefillStep_ChatCompletionsFormat(t *testing.T) {
 			{Index: 0, Hash: "hash-a", KwargsData: "dGVuc29y", Placeholder: pipeline.PlaceholderRange{Offset: 1, Length: 3}},
 		},
 		ECTransferParams: []map[string]any{
-			{"hash-a": map[string]any{"peer_host": "10.0.0.1", "peer_port": 5501}},
+			{"hash-a": map[string]any{"peer_port": 5501, "size_bytes": 1228800, "nixl_agent_metadata_b64": "bml4..."}},
 		},
 		KVTransferParams: make(map[string]any),
 	}
@@ -294,6 +294,16 @@ func TestPrefillStep_ChatCompletionsFormat(t *testing.T) {
 		t.Fatal("tokens.features should have mm_hashes")
 	}
 
+	// Verify ec_transfer_params is forwarded in chat format
+	ecParams, ok := prefillBody["ec_transfer_params"].(map[string]any)
+	if !ok {
+		t.Fatal("expected ec_transfer_params in chat format prefill body")
+	}
+	ecEntry, ok := ecParams["hash-a"].(map[string]any)
+	if !ok || len(ecEntry) == 0 {
+		t.Errorf("ec_transfer_params[hash-a] missing or empty: %v", ecParams["hash-a"])
+	}
+
 	// Verify top-level kv_transfer_params
 	if _, ok := prefillBody["kv_transfer_params"]; !ok {
 		t.Fatal("expected kv_transfer_params in chat format")
@@ -327,7 +337,7 @@ func TestPrefillStep_GatewayError(t *testing.T) {
 			{Index: 0, Hash: "h1", Placeholder: pipeline.PlaceholderRange{Offset: 1, Length: 1}},
 		},
 		ECTransferParams: []map[string]any{
-			{"h1": map[string]any{"peer_host": "10.0.0.1", "peer_port": 5501}},
+			{"h1": map[string]any{"peer_port": 5501, "size_bytes": 1228800, "nixl_agent_metadata_b64": "bml4..."}},
 		},
 		KVTransferParams: make(map[string]any),
 	}

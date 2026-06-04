@@ -17,7 +17,7 @@ rendering_service:
 
 pipeline:
   kv_connector: nixlv2          # nixlv2 | shared_storage
-  ec_connector: shared_storage  # shared_storage | nixlv2
+  ec_connector: shared_storage  # shared_storage | nixl
   steps:
     - type: replace-media-urls
       params:

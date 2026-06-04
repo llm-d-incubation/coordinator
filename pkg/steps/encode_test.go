@@ -71,7 +71,7 @@ func TestEncodeStep_ParallelFanOut(t *testing.T) {
 	step, err := NewEncodeStep(map[string]any{
 		"use_openai_format": false,
 		"max_parallel":      4,
-		ParamECConnector:    ec.NIXLv2,
+		ParamECConnector:    ec.NIXL,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -197,7 +197,7 @@ func TestEncodeStep_ChatCompletionsFormat(t *testing.T) {
 
 	gwClient := gateway.New(config.GatewayConfig{Address: server.URL})
 	step, err := NewEncodeStep(map[string]any{
-		ParamECConnector: ec.NIXLv2,
+		ParamECConnector: ec.NIXL,
 	})
 	if err != nil {
 		t.Fatal(err)

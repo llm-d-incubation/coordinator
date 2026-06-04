@@ -21,9 +21,9 @@ var logger = ctrl.Log.WithName("ec")
 // transferred from encoder pods to the prefill consumer pod. Two flavors:
 //
 //   - nixl: encoder pods register embeddings in NIXL-mapped memory and return
-//     {mm_hash: {peer_host, peer_port, size_bytes, nixl_agent_metadata_b64}}
-//     per encoded image. The coordinator merges these by mm_hash and forwards
-//     them to the prefill request as ec_transfer_params.
+//     {mm_hash: {peer_port, size_bytes, nixl_agent_metadata_b64}} per encoded
+//     image. The coordinator merges these by mm_hash and forwards them to the
+//     prefill request as ec_transfer_params.
 //   - shared_storage: encoder pods write embeddings to shared storage keyed
 //     by mm_hash. The consumer reads them back; no ec_transfer_params needed
 //     on the wire.
@@ -49,10 +49,10 @@ func Build(name string) (Connector, error) {
 		name = DefaultECConnectorName
 	}
 	switch name {
-	case NIXLv2:
-		return nixlV2{}, nil
+	case NIXL:
+		return nixlEC{}, nil
 	case SharedStorage:
-		return sharedStorage{}, nil
+		return sharedStorageEC{}, nil
 	default:
 		return nil, fmt.Errorf("unknown ec_connector: %q", name)
 	}

@@ -40,9 +40,9 @@ func Build(name string) (Connector, error) {
 	}
 	switch name {
 	case NIXLv2:
-		return nixlV2{}, nil
+		return nixlV2KV{}, nil
 	case SharedStorage:
-		return sharedStorage{}, nil
+		return sharedStorageKV{}, nil
 	case SGLang:
 		return sglangKV{}, nil
 	default:
