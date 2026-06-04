@@ -29,7 +29,7 @@ func (nixlV2) PreparePrefillECParams(reqCtx *pipeline.RequestContext) map[string
 	for i, entry := range reqCtx.ECTransferParams {
 		for k, v := range entry {
 			if _, exists := params[k]; exists {
-				logger.Info("warning: duplicate ec_transfer_params key across encoder responses; overwriting",
+				logger.V(logutil.DEBUG).Info("duplicate ec_transfer_params key across encoder responses; overwriting",
 					"item", i, "key", k, "requestID", reqCtx.RequestID)
 			}
 			params[k] = v
