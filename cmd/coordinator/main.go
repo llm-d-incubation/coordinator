@@ -102,13 +102,6 @@ func buildPipeline(cfg *config.Config, gwClient *gateway.Client) ([]pipeline.Ste
 			ga.SetGatewayClient(gwClient)
 		}
 
-		type renderAware interface {
-			SetServiceAddress(string)
-		}
-		if ra, ok := step.(renderAware); ok {
-			ra.SetServiceAddress(cfg.Rendering.Address)
-		}
-
 		steps = append(steps, step)
 	}
 	return steps, nil
