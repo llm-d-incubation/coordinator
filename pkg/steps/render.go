@@ -3,6 +3,7 @@ package steps
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -109,9 +110,9 @@ func (s *RenderStep) executeCompletions(ctx context.Context, reqCtx *pipeline.Re
 			logger.V(logutil.DEFAULT).Info("prompt is token array, skipping render", "token_ids_len", len(tokenIDs))
 			return nil
 		case string:
-			return fmt.Errorf("render: batched string prompts ([]string) are not supported")
+			return errors.New("render: batched string prompts ([]string) are not supported")
 		case []any:
-			return fmt.Errorf("render: batched token prompts ([][]int) are not supported")
+			return errors.New("render: batched token prompts ([][]int) are not supported")
 		default:
 			return fmt.Errorf("render: invalid prompt array element: %T", p[0])
 		}
@@ -161,7 +162,7 @@ func (s *RenderStep) executeChatCompletions(ctx context.Context, reqCtx *pipelin
 // and decodes the JSON response into out.
 func (s *RenderStep) postRender(ctx context.Context, reqCtx *pipeline.RequestContext, basePath string, out any) error {
 	if s.serviceAddress == "" {
-		return fmt.Errorf("render: service address not configured (set 'address' in render step params)")
+		return errors.New("render: service address not configured (set 'address' in render step params)")
 	}
 
 	logger := log.FromContext(ctx).WithName(RenderStepName)
