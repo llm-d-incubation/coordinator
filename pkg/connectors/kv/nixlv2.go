@@ -27,10 +27,11 @@ func (nixlV2) PreparePrefillKVParams(_ *pipeline.RequestContext) map[string]any 
 }
 
 func (nixlV2) PrepareDecodeKVParams(reqCtx *pipeline.RequestContext) map[string]any {
-	out := make(map[string]any, len(reqCtx.KVTransferParams)+1)
+	out := make(map[string]any, len(reqCtx.KVTransferParams))
 	for k, v := range reqCtx.KVTransferParams {
 		out[k] = v
 	}
+	out["do_remote_decode"] = false
 	out["do_remote_prefill"] = true
 	logger.V(logutil.TRACE).Info("preparing decode kv params", "params", out)
 	return out

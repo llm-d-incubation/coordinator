@@ -36,9 +36,10 @@ func (sglangKV) Name() string { return SGLang }
 
 func (sglangKV) PreparePrefillKVParams(_ *pipeline.RequestContext) map[string]any {
 	params := map[string]any{
-		"do_remote_decode": true,
-		fieldBootstrapPort: sglangBootstrapPort,
-		fieldBootstrapRoom: uuid.NewString(),
+		"do_remote_decode":  true,
+		"do_remote_prefill": false,
+		fieldBootstrapPort:  sglangBootstrapPort,
+		fieldBootstrapRoom:  uuid.NewString(),
 	}
 	logger.V(logutil.TRACE).Info("preparing prefill kv params", "params", params)
 	return params
@@ -49,6 +50,8 @@ func (sglangKV) PrepareDecodeKVParams(reqCtx *pipeline.RequestContext) map[strin
 	for k, v := range reqCtx.KVTransferParams {
 		out[k] = v
 	}
+	out["do_remote_decode"] = false
+	out["do_remote_prefill"] = true
 	logger.V(logutil.TRACE).Info("preparing decode kv params", "params", out)
 	return out
 }

@@ -29,6 +29,9 @@ func TestSGLangKV_Params(t *testing.T) {
 	if prefill["do_remote_decode"] != true {
 		t.Errorf("prefill: do_remote_decode = %v, want true", prefill["do_remote_decode"])
 	}
+	if prefill["do_remote_prefill"] != false {
+		t.Errorf("prefill: do_remote_prefill = %v, want false", prefill["do_remote_prefill"])
+	}
 	if prefill[fieldBootstrapPort] != sglangBootstrapPort {
 		t.Errorf("prefill: %s = %v, want %d", fieldBootstrapPort, prefill[fieldBootstrapPort], sglangBootstrapPort)
 	}
@@ -37,11 +40,13 @@ func TestSGLangKV_Params(t *testing.T) {
 		t.Errorf("prefill: %s = %v (%T), want non-empty string", fieldBootstrapRoom, prefill[fieldBootstrapRoom], prefill[fieldBootstrapRoom])
 	}
 
-	// Decode: forwards prefill-response kv_transfer_params verbatim.
+	// Decode: forwards prefill-response kv_transfer_params plus remote flags.
 	wantDecode := map[string]any{
-		fieldBootstrapHost: "10.0.0.42",
-		fieldBootstrapPort: 8998,
-		fieldBootstrapRoom: int64(12345),
+		fieldBootstrapHost:  "10.0.0.42",
+		fieldBootstrapPort:  8998,
+		fieldBootstrapRoom:  int64(12345),
+		"do_remote_decode":  false,
+		"do_remote_prefill": true,
 	}
 	if got := c.PrepareDecodeKVParams(reqCtx); !reflect.DeepEqual(got, wantDecode) {
 		t.Errorf("decode params:\n got=%v\nwant=%v", got, wantDecode)
@@ -87,6 +92,7 @@ func TestConnectors_KVParams(t *testing.T) {
 				"remote_port":       nil,
 			},
 			wantDecode: map[string]any{
+				"do_remote_decode":  false,
 				"do_remote_prefill": true,
 				"block_id":          "block-999",
 				"peer_host":         "10.0.0.42",
@@ -96,8 +102,8 @@ func TestConnectors_KVParams(t *testing.T) {
 		{
 			name:           SharedStorage,
 			decodeIncoming: map[string]any{"ignored": "field"},
-			wantPrefill:    map[string]any{"do_remote_decode": true},
-			wantDecode:     map[string]any{"do_remote_prefill": true},
+			wantPrefill:    map[string]any{"do_remote_decode": true, "do_remote_prefill": false},
+			wantDecode:     map[string]any{"do_remote_decode": false, "do_remote_prefill": true},
 		},
 	}
 

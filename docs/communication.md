@@ -420,7 +420,7 @@ Two request formats are supported (see [Request Format Configuration](#request-f
 
 **Common notes:**
 - `ec_transfer_params` is a flat map keyed by mm_hash (same format as the encode response), merging all per-image entries from the encode stage
-- `kv_transfer_params.do_remote_decode = true` tells the prefill worker to store KV cache for remote decode
+- `kv_transfer_params.do_remote_decode = true, do_remote_prefill = false` tells the prefill worker to store KV cache for remote decode
 - `mm_placeholders` use the original offsets from the render response (positions in the full token sequence)
 
 ---
@@ -453,7 +453,7 @@ EPP-Phase: prefill
     "abc123hash": {"peer_host": "10.0.0.1", "peer_port": 5501, "size_bytes": 2359296, "nixl_agent_metadata_b64": "TklYTA..."},
     "def456hash": {"peer_host": "10.0.0.2", "peer_port": 5502, "size_bytes": 2359296, "nixl_agent_metadata_b64": "QWdlbnQ..."}
   },
-  "kv_transfer_params": {"do_remote_decode": true},
+  "kv_transfer_params": {"do_remote_decode": true, "do_remote_prefill": false},
   "sampling_params": {"max_tokens": 1}
 }
 ```
@@ -487,7 +487,7 @@ EPP-Phase: prefill
     "abc123hash": {"peer_host": "10.0.0.1", "peer_port": 5501, "size_bytes": 2359296, "nixl_agent_metadata_b64": "TklYTA..."},
     "def456hash": {"peer_host": "10.0.0.2", "peer_port": 5502, "size_bytes": 2359296, "nixl_agent_metadata_b64": "QWdlbnQ..."}
   },
-  "sampling_params": {"max_tokens": 1, "extra_args": {"kv_transfer_params":{"do_remote_decode": true}}}
+  "sampling_params": {"max_tokens": 1, "extra_args": {"kv_transfer_params":{"do_remote_decode": true, "do_remote_prefill": false}}}
 }
 ```
 
@@ -552,7 +552,7 @@ EPP-Phase: prefill
     "abc123hash": {"peer_host": "10.0.0.1", "peer_port": 5501, "size_bytes": 2359296, "nixl_agent_metadata_b64": "TklYTA..."},
     "def456hash": {"peer_host": "10.0.0.2", "peer_port": 5502, "size_bytes": 2359296, "nixl_agent_metadata_b64": "QWdlbnQ..."}
   },
-  "kv_transfer_params": {"do_remote_decode": true},
+  "kv_transfer_params": {"do_remote_decode": true, "do_remote_prefill": false},
   "max_tokens": 1
 }
 ```
@@ -594,7 +594,7 @@ EPP-Phase: prefill
   "request_id": "req-abc-123",
   "model": "llava-v1.5-7b",
   "prompt": [1, 2345, 6789, 101, 202, 303],
-  "kv_transfer_params": {"do_remote_decode": true},
+  "kv_transfer_params": {"do_remote_decode": true, "do_remote_prefill": false},
   "max_tokens": 1
 }
 ```
@@ -703,13 +703,20 @@ EPP-Phase: decode
     }
   },
   "kv_transfer_params": {
-    "block_id": "block-999",
-    "peer_host": "10.0.0.42",
-    "peer_port": 7777,
-    "do_remote_prefill": true
+    "do_remote_decode": false,
+    "do_remote_prefill": true,
+    "remote_engine_id": "e95b1c63-2ba6-4f26-96d0-9338d40a2560",
+    "remote_block_ids": [[1]],
+    "remote_request_id": "generate-tokens-550e8400-e29b-41d4-a716-446655440000",
+    "remote_host": "10.130.5.242",
+    "remote_port": 5557,
+    "tp_size": 2
   }
 }
 ```
+
+> [!NOTE]
+> The `kv_transfer_params` fields are connector-dependent. The example above shows the NIXLv2 format. The fields `remote_engine_id`, `remote_block_ids`, `remote_request_id`, `remote_host`, `remote_port`, and `tp_size` are returned by the prefill worker and forwarded verbatim to the decode worker. The coordinator adds `do_remote_decode: false` and `do_remote_prefill: true`.
 
 ### Request (/v1/completions)
 
@@ -726,10 +733,14 @@ EPP-Phase: decode
   "stream": false,
   "prompt": [1, 2345, 6789, 101, 202, 303],
   "kv_transfer_params": {
-    "block_id": "block-999",
-    "peer_host": "10.0.0.42",
-    "peer_port": 7777,
-    "do_remote_prefill": true
+    "do_remote_decode": false,
+    "do_remote_prefill": true,
+    "remote_engine_id": "e95b1c63-2ba6-4f26-96d0-9338d40a2560",
+    "remote_block_ids": [[1]],
+    "remote_request_id": "generate-tokens-550e8400-e29b-41d4-a716-446655440000",
+    "remote_host": "10.130.5.242",
+    "remote_port": 5557,
+    "tp_size": 2
   }
 }
 ```
@@ -740,7 +751,7 @@ EPP-Phase: decode
 - `uuid` is added to each `image_url` content part (value is the mm_hash from the render step) for multimodal cache lookup
 - `image_url` retains the original base64 data URI from the replace-media-urls step so the decode worker can process images and produce the correct token sequence (matching what prefill computed)
 - `kv_transfer_params` is injected at the top level of the request body
-- `do_remote_prefill: true` is added by the coordinator to signal the decode worker to fetch KV from the remote prefill worker
+- `do_remote_decode: false, do_remote_prefill: true` is added by the coordinator to signal the decode worker to fetch KV from the remote prefill worker
 - The `EPP-Phase: decode` header is used for routing (replaces the old `/decode/` path prefix)
 
 ### Response (non-streaming)
