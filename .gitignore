@@ -30,7 +30,6 @@ go.work.sum
 .DS_Store
 .env
 .claude/
-CLAUDE.md
 
 # IDE files
 .idea
