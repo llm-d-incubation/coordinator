@@ -12,9 +12,6 @@ gateway:
   timeout: 60s
   use_openai_format: true    # env: COORDINATOR_GATEWAY_USE_OPENAI_FORMAT
 
-rendering_service:
-  address: "http://rendering-service:8080"
-
 pipeline:
   kv_connector: nixlv2          # nixlv2 | shared_storage
   ec_connector: shared_storage  # shared_storage | nixl
@@ -25,7 +22,8 @@ pipeline:
         max_concurrent_downloads: 10
     - type: render
       params:
-        endpoint: "/v1/chat/completions/render"
+        address: "http://rendering-service:8080"
+        timeout: 30s
     #- type: conditional-decode
     - type: encode
       params:

@@ -108,18 +108,31 @@ The original client request body (OpenAI-compatible chat completion format):
 
 ## Stage 2: render
 
-Sends the modified request body to the rendering/tokenization service. Returns the full tokenized prompt and per-image metadata (hashes, placeholder positions, kwargs).
+Sends the request body to the rendering/tokenization service. Returns the full tokenized prompt and (for chat completions with images) per-image metadata: hashes, placeholder positions, and kwargs.
 
-**Skipped for `/v1/completions` requests when `prompt` is already a token array** (array of integers). In that case the pipeline continues to the next stage.
+The render step routes to one of two upstream paths depending on the original client request:
 
-### Request
+| Original client path     | Render endpoint                              | Skipped when                                  |
+|--------------------------|----------------------------------------------|-----------------------------------------------|
+| `/v1/chat/completions`   | `POST <rendering_service_address>/v1/chat/completions/render` | never                                         |
+| `/v1/completions`        | `POST <rendering_service_address>/v1/completions/render`      | `prompt` is already a token array (`[]int`)   |
+
+Batched completions prompts (`[]string` and `[][]int`) are rejected by the coordinator before the upstream call.
+
+The two endpoints currently use **different response shapes**: chat-completions returns a single JSON object, while completions returns a one-element JSON array of that same object. The coordinator handles both; the asymmetry is documented per subsection below.
+
+---
+
+### 2.A `/v1/chat/completions/render`
+
+#### Request
 
 ```
 POST <rendering_service_address>/v1/chat/completions/render
 Content-Type: application/json
 ```
 
-Body is the full `reqCtx.Body` (with data URIs from stage 1):
+Body is the full `reqCtx.Body` (with data: URIs from stage 1):
 
 ```json
 {
@@ -144,7 +157,7 @@ Body is the full `reqCtx.Body` (with data URIs from stage 1):
 }
 ```
 
-### Response
+#### Response (single object)
 
 ```json
 {
@@ -166,7 +179,9 @@ Body is the full `reqCtx.Body` (with data URIs from stage 1):
 }
 ```
 
-### Output (mutates RequestContext)
+For text-only chat completions (no `image_url` parts), `features.mm_hashes.image`, `features.mm_placeholders.image`, and `features.kwargs_data.image` are empty arrays.
+
+#### Output (mutates RequestContext)
 
 - `reqCtx.TokenIDs` = `[1, 32000, 32000, 32000, 32000, 32000, 32000, 2345, 6789]`
 - `reqCtx.MultimodalEntries` enriched with:
@@ -176,6 +191,75 @@ Body is the full `reqCtx.Body` (with data URIs from stage 1):
   - `entries[1].Hash = "def456hash"`
   - `entries[1].KwargsData = "<base64-encoded-pixel-tensor-2>"`
   - `entries[1].Placeholder = {Offset: 4, Length: 3}`
+
+The coordinator validates that `mm_hashes.image`, `mm_placeholders.image`, and `kwargs_data.image` all have length `len(reqCtx.MultimodalEntries)`; a mismatch fails the request.
+
+---
+
+### 2.B `/v1/completions/render`
+
+Used only when `reqCtx.Body["prompt"]` is a string. If the prompt is already a token array (`[]int`), the render step short-circuits and the upstream service is not called.
+
+#### Request
+
+```
+POST <rendering_service_address>/v1/completions/render
+Content-Type: application/json
+```
+
+Body is the full `reqCtx.Body`:
+
+```json
+{
+  "model": "Qwen/Qwen3-VL-2B-Instruct",
+  "prompt": "hello world"
+}
+```
+
+#### Response (one-element array of objects)
+
+```json
+[
+  {
+    "request_id": "cmpl-9442e4863f950943",
+    "token_ids": [14990, 1879],
+    "features": null,
+    "sampling_params": {
+      "presence_penalty": 0.0,
+      "frequency_penalty": 0.0,
+      "repetition_penalty": 1.0,
+      "temperature": 0.7,
+      "top_p": 0.8,
+      "top_k": 20,
+      "min_p": 0.0,
+      "stop": [],
+      "stop_token_ids": [],
+      "output_kind": 2,
+      "skip_clone": true,
+      "bad_words": [],
+      "skip_reading_prefix_cache": false
+    },
+    "model": "Qwen/Qwen3-VL-2B-Instruct",
+    "stream": false,
+    "stream_options": null,
+    "cache_salt": null,
+    "priority": 0,
+    "kv_transfer_params": null
+  }
+]
+```
+
+The coordinator only reads `[0].token_ids`. All other fields (`request_id`, `sampling_params`, echoed `model`, `stream`, `stream_options`, `cache_salt`, `priority`, `kv_transfer_params`) are ignored. The coordinator requires the array to have exactly one element and fails the request otherwise (it never sends a batched prompt upstream).
+
+`features` is `null` for completions because images are not supported on this endpoint.
+
+#### Output (mutates RequestContext)
+
+- `reqCtx.TokenIDs` = `[14990, 1879]`
+- `reqCtx.Body["prompt"]` is rewritten from the original string to the same `[]int` so downstream stages see a token-array prompt.
+- `reqCtx.MultimodalEntries` is left untouched (always empty for `/v1/completions`).
+
+When render is skipped because `prompt` is already a token array, `reqCtx.TokenIDs` is populated directly from the input array and `reqCtx.Body["prompt"]` is left as-is.
 
 ---
 
@@ -419,8 +503,8 @@ Sends a single prefill request with the full token sequence, all image metadata,
 Two request formats are supported (see [Request Format Configuration](#request-format-configuration)).
 
 **Common notes:**
-- `ec_transfer_params` is structured as per-modality: `{"image": [params_0, params_1, ...]}`
-- `kv_transfer_params.do_remote_decode = true` tells the prefill worker to store KV cache for remote decode
+- `ec_transfer_params` is a flat map keyed by mm_hash (same format as the encode response), merging all per-image entries from the encode stage
+- `kv_transfer_params.do_remote_decode = true, do_remote_prefill = false` tells the prefill worker to store KV cache for remote decode
 - `mm_placeholders` use the original offsets from the render response (positions in the full token sequence)
 
 ---
@@ -450,12 +534,10 @@ EPP-Phase: prefill
     "kwargs_data": {"image": ["<base64-encoded-pixel-tensor-1>", "<base64-encoded-pixel-tensor-2>"]}
   },
   "ec_transfer_params": {
-    "image": [
-      {"abc123hash": {"peer_host": "10.0.0.1", "peer_port": 5501, "size_bytes": 2359296, "nixl_agent_metadata_b64": "TklYTA..."}},
-      {"def456hash": {"peer_host": "10.0.0.2", "peer_port": 5502, "size_bytes": 2359296, "nixl_agent_metadata_b64": "QWdlbnQ..."}}
-    ]
+    "abc123hash": {"peer_host": "10.0.0.1", "peer_port": 5501, "size_bytes": 2359296, "nixl_agent_metadata_b64": "TklYTA..."},
+    "def456hash": {"peer_host": "10.0.0.2", "peer_port": 5502, "size_bytes": 2359296, "nixl_agent_metadata_b64": "QWdlbnQ..."}
   },
-  "kv_transfer_params": {"do_remote_decode": true},
+  "kv_transfer_params": {"do_remote_decode": true, "do_remote_prefill": false},
   "sampling_params": {"max_tokens": 1}
 }
 ```
@@ -486,12 +568,10 @@ EPP-Phase: prefill
     "kwargs_data": {"image": ["<base64-encoded-pixel-tensor-1>", "<base64-encoded-pixel-tensor-2>"]}
   },
   "ec_transfer_params": {
-    "image": [
-      {"abc123hash": {"peer_host": "10.0.0.1", "peer_port": 5501, "size_bytes": 2359296, "nixl_agent_metadata_b64": "TklYTA..."}},
-      {"def456hash": {"peer_host": "10.0.0.2", "peer_port": 5502, "size_bytes": 2359296, "nixl_agent_metadata_b64": "QWdlbnQ..."}}
-    ]
+    "abc123hash": {"peer_host": "10.0.0.1", "peer_port": 5501, "size_bytes": 2359296, "nixl_agent_metadata_b64": "TklYTA..."},
+    "def456hash": {"peer_host": "10.0.0.2", "peer_port": 5502, "size_bytes": 2359296, "nixl_agent_metadata_b64": "QWdlbnQ..."}
   },
-  "sampling_params": {"max_tokens": 1, "extra_args": {"kv_transfer_params":{"do_remote_decode": true}}}
+  "sampling_params": {"max_tokens": 1, "extra_args": {"kv_transfer_params":{"do_remote_decode": true, "do_remote_prefill": false}}}
 }
 ```
 
@@ -553,12 +633,10 @@ EPP-Phase: prefill
     }
   },
   "ec_transfer_params": {
-    "image": [
-      {"abc123hash": {"peer_host": "10.0.0.1", "peer_port": 5501, "size_bytes": 2359296, "nixl_agent_metadata_b64": "TklYTA..."}},
-      {"def456hash": {"peer_host": "10.0.0.2", "peer_port": 5502, "size_bytes": 2359296, "nixl_agent_metadata_b64": "QWdlbnQ..."}}
-    ]
+    "abc123hash": {"peer_host": "10.0.0.1", "peer_port": 5501, "size_bytes": 2359296, "nixl_agent_metadata_b64": "TklYTA..."},
+    "def456hash": {"peer_host": "10.0.0.2", "peer_port": 5502, "size_bytes": 2359296, "nixl_agent_metadata_b64": "QWdlbnQ..."}
   },
-  "kv_transfer_params": {"do_remote_decode": true},
+  "kv_transfer_params": {"do_remote_decode": true, "do_remote_prefill": false},
   "max_tokens": 1
 }
 ```
@@ -600,7 +678,7 @@ EPP-Phase: prefill
   "request_id": "req-abc-123",
   "model": "llava-v1.5-7b",
   "prompt": [1, 2345, 6789, 101, 202, 303],
-  "kv_transfer_params": {"do_remote_decode": true},
+  "kv_transfer_params": {"do_remote_decode": true, "do_remote_prefill": false},
   "max_tokens": 1
 }
 ```
@@ -709,13 +787,20 @@ EPP-Phase: decode
     }
   },
   "kv_transfer_params": {
-    "block_id": "block-999",
-    "peer_host": "10.0.0.42",
-    "peer_port": 7777,
-    "do_remote_prefill": true
+    "do_remote_decode": false,
+    "do_remote_prefill": true,
+    "remote_engine_id": "e95b1c63-2ba6-4f26-96d0-9338d40a2560",
+    "remote_block_ids": [[1]],
+    "remote_request_id": "generate-tokens-550e8400-e29b-41d4-a716-446655440000",
+    "remote_host": "10.130.5.242",
+    "remote_port": 5557,
+    "tp_size": 2
   }
 }
 ```
+
+> [!NOTE]
+> The `kv_transfer_params` fields are connector-dependent. The example above shows the NIXLv2 format. The fields `remote_engine_id`, `remote_block_ids`, `remote_request_id`, `remote_host`, `remote_port`, and `tp_size` are returned by the prefill worker and forwarded verbatim to the decode worker. The coordinator adds `do_remote_decode: false` and `do_remote_prefill: true`.
 
 ### Request (/v1/completions)
 
@@ -732,10 +817,14 @@ EPP-Phase: decode
   "stream": false,
   "prompt": [1, 2345, 6789, 101, 202, 303],
   "kv_transfer_params": {
-    "block_id": "block-999",
-    "peer_host": "10.0.0.42",
-    "peer_port": 7777,
-    "do_remote_prefill": true
+    "do_remote_decode": false,
+    "do_remote_prefill": true,
+    "remote_engine_id": "e95b1c63-2ba6-4f26-96d0-9338d40a2560",
+    "remote_block_ids": [[1]],
+    "remote_request_id": "generate-tokens-550e8400-e29b-41d4-a716-446655440000",
+    "remote_host": "10.130.5.242",
+    "remote_port": 5557,
+    "tp_size": 2
   }
 }
 ```
@@ -746,7 +835,7 @@ EPP-Phase: decode
 - `uuid` is added to each `image_url` content part (value is the mm_hash from the render step) for multimodal cache lookup
 - `image_url` retains the original base64 data URI from the replace-media-urls step so the decode worker can process images and produce the correct token sequence (matching what prefill computed)
 - `kv_transfer_params` is injected at the top level of the request body
-- `do_remote_prefill: true` is added by the coordinator to signal the decode worker to fetch KV from the remote prefill worker
+- `do_remote_decode: false, do_remote_prefill: true` is added by the coordinator to signal the decode worker to fetch KV from the remote prefill worker
 - The `EPP-Phase: decode` header is used for routing (replaces the old `/decode/` path prefix)
 
 ### Response (non-streaming)

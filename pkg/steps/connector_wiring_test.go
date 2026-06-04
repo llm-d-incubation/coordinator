@@ -37,7 +37,7 @@ func TestPrefillStep_ConnectorShapesPrefillBody(t *testing.T) {
 		},
 		{
 			connector:  kv.SharedStorage,
-			wantFields: map[string]any{"do_remote_decode": true},
+			wantFields: map[string]any{"do_remote_decode": true, "do_remote_prefill": false},
 			denyFields: []string{"remote_engine_id", "remote_host", "remote_block_ids", "remote_port"},
 		},
 	}
@@ -100,26 +100,47 @@ func TestPrefillStep_ConnectorShapesPrefillBody(t *testing.T) {
 }
 
 // TestDecodeStep_ConnectorShapesDecodeBody verifies the per-connector
-// kv_transfer_params shape sent on the decode request. nixlv2 forwards the
-// prefill response verbatim plus do_remote_prefill: true; the others emit
-// only do_remote_prefill: true.
+// kv_transfer_params shape sent on the decode request. nixlv2 forwards all
+// prefill response fields and overrides do_remote_decode/do_remote_prefill;
+// shared_storage emits only the two flags.
 func TestDecodeStep_ConnectorShapesDecodeBody(t *testing.T) {
+	// nixlV2PrefillResponse simulates the kv_transfer_params returned by a
+	// nixlv2 prefill worker (remote addressing fields filled in).
+	nixlV2PrefillResponse := map[string]any{
+		"do_remote_decode":  true,
+		"do_remote_prefill": false,
+		"remote_engine_id":  "e95b1c63-2ba6-4f26-96d0-9338d40a2560",
+		"remote_block_ids":  []any{[]any{float64(1)}},
+		"remote_request_id": "generate-tokens-550e8400-e29b-41d4-a716-446655440000",
+		"remote_host":       "10.130.5.242",
+		"remote_port":       float64(5557),
+		"tp_size":           float64(2),
+	}
+
 	cases := []struct {
-		connector  string
-		wantFields map[string]any
-		denyFields []string
+		connector       string
+		prefillResponse map[string]any
+		wantFields      map[string]any
+		denyFields      []string
 	}{
 		{
-			connector: kv.NIXLv2,
+			connector:       kv.NIXLv2,
+			prefillResponse: nixlV2PrefillResponse,
 			wantFields: map[string]any{
+				"do_remote_decode":  false,
 				"do_remote_prefill": true,
-				"block_id":          "from-prefill",
+				"remote_engine_id":  "e95b1c63-2ba6-4f26-96d0-9338d40a2560",
+				"remote_request_id": "generate-tokens-550e8400-e29b-41d4-a716-446655440000",
+				"remote_host":       "10.130.5.242",
+				"remote_port":       float64(5557),
+				"tp_size":           float64(2),
 			},
 		},
 		{
-			connector:  kv.SharedStorage,
-			wantFields: map[string]any{"do_remote_prefill": true},
-			denyFields: []string{"block_id"},
+			connector:       kv.SharedStorage,
+			prefillResponse: map[string]any{"ignored": "field"},
+			wantFields:      map[string]any{"do_remote_decode": false, "do_remote_prefill": true},
+			denyFields:      []string{"remote_engine_id", "remote_host", "remote_block_ids", "remote_port", "ignored"},
 		},
 	}
 
@@ -149,7 +170,7 @@ func TestDecodeStep_ConnectorShapesDecodeBody(t *testing.T) {
 				RequestID:        "req",
 				OriginalPath:     gateway.PathChatCompletions,
 				Model:            "m",
-				KVTransferParams: map[string]any{"block_id": "from-prefill"},
+				KVTransferParams: tc.prefillResponse,
 				Body:             map[string]any{"model": "m"},
 				ResponseWriter:   recorder,
 			}
