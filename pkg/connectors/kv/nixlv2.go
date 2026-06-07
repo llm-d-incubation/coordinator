@@ -11,7 +11,7 @@ import (
 // so the decode pod can pull KV blocks from the prefill pod.
 type nixlV2KV struct{}
 
-func (nixlV2KV) Name() string { return NIXLv2 }
+func (nixlV2KV) Name() string { return NIXLV2 }
 
 func (nixlV2KV) PreparePrefillKVParams(_ *pipeline.RequestContext) map[string]any {
 	params := map[string]any{

@@ -1,7 +1,7 @@
 package kv
 
 const (
-	NIXLv2        = "nixlv2"
-	SharedStorage = "shared_storage"
+	NIXLV2        = "nixlv2"
+	SharedStorage = "shared-storage"
 	SGLang        = "sglang"
 )

@@ -25,7 +25,7 @@ func TestPrefillStep_ConnectorShapesPrefillBody(t *testing.T) {
 		denyFields []string
 	}{
 		{
-			connector: kv.NIXLv2,
+			connector: kv.NIXLV2,
 			wantFields: map[string]any{
 				"do_remote_decode":  true,
 				"do_remote_prefill": false,
@@ -124,7 +124,7 @@ func TestDecodeStep_ConnectorShapesDecodeBody(t *testing.T) {
 		denyFields      []string
 	}{
 		{
-			connector:       kv.NIXLv2,
+			connector:       kv.NIXLV2,
 			prefillResponse: nixlV2PrefillResponse,
 			wantFields: map[string]any{
 				"do_remote_decode":  false,

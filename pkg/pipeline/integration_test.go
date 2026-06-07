@@ -24,8 +24,8 @@ func TestFullPipeline_AllConnectorCombinations(t *testing.T) {
 		ecConnector     string
 		wantECInPrefill bool // ec_transfer_params should be present in prefill body
 	}{
-		{kv.NIXLv2, ec.NIXL, true},
-		{kv.NIXLv2, ec.SharedStorage, false},
+		{kv.NIXLV2, ec.NIXL, true},
+		{kv.NIXLV2, ec.SharedStorage, false},
 		{kv.SharedStorage, ec.NIXL, true},
 		{kv.SharedStorage, ec.SharedStorage, false},
 	}

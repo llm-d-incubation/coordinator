@@ -282,6 +282,88 @@ func TestEncodeStep_ChatCompletionsFormat(t *testing.T) {
 	}
 }
 
+// TestEncodeStep_TextOnly verifies that Execute returns immediately without any
+// gateway calls when MultimodalEntries is empty (text-only request). ECTransferParams
+// must remain nil so the prefill step emits no ec_transfer_params field.
+func TestEncodeStep_TextOnly(t *testing.T) {
+	gatewayCallCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gatewayCallCount++
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	gwClient := gateway.New(config.GatewayConfig{Address: server.URL})
+	step, err := NewEncodeStep(map[string]any{ParamECConnector: ec.NIXL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	step.(*EncodeStep).SetGatewayClient(gwClient)
+
+	reqCtx := &pipeline.RequestContext{
+		RequestID:         "req-text-only",
+		Model:             "test-model",
+		TokenIDs:          []int{1, 42, 43, 2},
+		MultimodalEntries: nil,
+	}
+
+	if err := step.Execute(context.Background(), reqCtx); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gatewayCallCount != 0 {
+		t.Fatalf("expected no gateway calls for text-only request, got %d", gatewayCallCount)
+	}
+	if reqCtx.ECTransferParams != nil {
+		t.Fatalf("expected nil ECTransferParams for text-only request, got %v", reqCtx.ECTransferParams)
+	}
+}
+
+// TestEncodeStep_EncoderReturnsNoECParams verifies the all-missing degradation path:
+// when every encoder response omits ec_transfer_params, MergeEncodeResponse skips each
+// entry and ECTransferParams stays nil, so the prefill step forwards the request without
+// the field. The encode step must not error -- missing metadata is warn-and-continue.
+func TestEncodeStep_EncoderReturnsNoECParams(t *testing.T) {
+	var requestCount atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount.Add(1)
+		// 2xx with no ec_transfer_params field.
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []any{map[string]any{"message": map[string]any{"content": ""}}},
+		})
+	}))
+	defer server.Close()
+
+	gwClient := gateway.New(config.GatewayConfig{Address: server.URL})
+	step, err := NewEncodeStep(map[string]any{
+		"use_openai_format": false,
+		ParamECConnector:    ec.NIXL,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	step.(*EncodeStep).SetGatewayClient(gwClient)
+
+	reqCtx := &pipeline.RequestContext{
+		RequestID: "req-no-ec",
+		Model:     "test-model",
+		TokenIDs:  []int{1, 32000, 32000, 2},
+		MultimodalEntries: []pipeline.MultimodalEntry{
+			{Index: 0, Hash: "hash-a", KwargsData: "dGVzdA==", Placeholder: pipeline.PlaceholderRange{Offset: 1, Length: 2}},
+			{Index: 1, Hash: "hash-b", KwargsData: "dGVzdA==", Placeholder: pipeline.PlaceholderRange{Offset: 1, Length: 2}},
+		},
+	}
+
+	if err := step.Execute(context.Background(), reqCtx); err != nil {
+		t.Fatalf("missing ec_transfer_params must not fail the encode step: %v", err)
+	}
+	if int(requestCount.Load()) != 2 {
+		t.Fatalf("expected 2 gateway requests, got %d", requestCount.Load())
+	}
+	if len(reqCtx.ECTransferParams) != 0 {
+		t.Fatalf("expected empty ECTransferParams when all encoders return no ec params, got %v", reqCtx.ECTransferParams)
+	}
+}
+
 func TestEncodeStep_BuildsCorrectTokenIDs(t *testing.T) {
 	var receivedTokenIDs []any
 

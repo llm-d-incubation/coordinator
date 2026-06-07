@@ -13,8 +13,8 @@ gateway:
   use_openai_format: true    # env: COORDINATOR_GATEWAY_USE_OPENAI_FORMAT
 
 pipeline:
-  kv_connector: nixlv2          # nixlv2 | shared_storage
-  ec_connector: shared_storage  # shared_storage | nixl
+  kv_connector: nixlv2          # nixlv2 | shared-storage
+  ec_connector: shared-storage  # shared-storage | ec-nixl
   steps:
     - type: replace-media-urls
       params:
