@@ -15,7 +15,7 @@ import (
 
 // DefaultKVConnectorName is the KV connector selected when an empty string is
 // passed to Build.
-const DefaultKVConnectorName = NIXLV2
+const DefaultKVConnectorName = NIXL
 
 var logger = ctrl.Log.WithName("kv")
 
@@ -39,8 +39,8 @@ func Build(name string) (Connector, error) {
 		name = DefaultKVConnectorName
 	}
 	switch name {
-	case NIXLV2:
-		return nixlV2KV{}, nil
+	case NIXL:
+		return nixlKV{}, nil
 	case SharedStorage:
 		return sharedStorageKV{}, nil
 	case SGLang:

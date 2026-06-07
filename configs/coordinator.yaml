@@ -59,14 +59,14 @@ gateway:
 pipeline:
   # kv_connector picks the protocol used to coordinate KV-cache transfer
   # between prefill and decode pods.
-  #   nixlv2         - NIXL v2 P2P RDMA (default)
+  #   kv-nixl        - NIXL P2P RDMA (default)
   #   shared-storage - shared filesystem / object store
   #   sglang         - SGLang-style KV bootstrap
-  kv_connector: nixlv2
+  kv_connector: kv-nixl
 
   # ec_connector picks the protocol used to ship encoded multimodal embedding
   # tensors from encoder pods to prefill pods.
-  #   ec-nixl        - NIXL v2 P2P RDMA
+  #   ec-nixl        - NIXL P2P RDMA
   #   shared-storage - shared filesystem (default for non-RDMA clusters)
   ec_connector: shared-storage
 
@@ -159,7 +159,7 @@ pipeline:
       # params:
       #   use_openai_format: true   # see notes above
       #   ec_connector: ec-nixl     # overrides pipeline.ec_connector
-      #   kv_connector: nixlv2      # overrides pipeline.kv_connector
+      #   kv_connector: kv-nixl     # overrides pipeline.kv_connector
 
     # -------------------------------------------------------------------
     # decode: streams the completion back to the client. Last step.
@@ -167,4 +167,4 @@ pipeline:
     - type: decode
       # params:
       #   use_openai_format: true   # see notes above
-      #   kv_connector: nixlv2      # overrides pipeline.kv_connector
+      #   kv_connector: kv-nixl     # overrides pipeline.kv_connector

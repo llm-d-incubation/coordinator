@@ -76,8 +76,8 @@ export VLLM_EXTRA_ARGS_P="${VLLM_EXTRA_ARGS_P:-}"
 export VLLM_EXTRA_ARGS_D="${VLLM_EXTRA_ARGS_D:-}"
 
 # KV connector for P disaggregation; EC connector for E disaggregation
-export CONNECTOR_TYPE="${CONNECTOR_TYPE:-nixlv2}"
-export KV_CONNECTOR_TYPE="${KV_CONNECTOR_TYPE:-nixlv2}"
+export CONNECTOR_TYPE="${CONNECTOR_TYPE:-kv-nixl}"
+export KV_CONNECTOR_TYPE="${KV_CONNECTOR_TYPE:-kv-nixl}"
 export EC_CONNECTOR_TYPE="${EC_CONNECTOR_TYPE:-ec-example}"
 
 # Per-pool EPP configs (single-profile each, since each EPP serves one pool)

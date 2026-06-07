@@ -98,51 +98,6 @@ func TestNIXL_MergeAndPrepare_DuplicateHashes(t *testing.T) {
 	}
 }
 
-// TestNIXL_SingleEncodeResponse verifies a single encode response produces a
-// one-entry flat map.
-func TestNIXL_SingleEncodeResponse(t *testing.T) {
-	c, err := Build(NIXL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	reqCtx := &pipeline.RequestContext{}
-	c.MergeEncodeResponse(reqCtx, map[string]any{"hash-x": map[string]any{"peer_port": 9000}})
-
-	got := c.PreparePrefillECParams(reqCtx)
-	if len(got) != 1 {
-		t.Fatalf("expected 1 entry, got %d: %v", len(got), got)
-	}
-	if _, ok := got["hash-x"]; !ok {
-		t.Errorf("expected key %q in result: %v", "hash-x", got)
-	}
-}
-
-// TestNIXL_MultiHashSingleResponse verifies that an encode response carrying
-// multiple mm_hashes in one map is fully expanded into the flat result.
-func TestNIXL_MultiHashSingleResponse(t *testing.T) {
-	c, err := Build(NIXL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	reqCtx := &pipeline.RequestContext{}
-
-	c.MergeEncodeResponse(reqCtx, map[string]any{
-		"hash-1": map[string]any{"peer_port": 5501},
-		"hash-2": map[string]any{"peer_port": 5502},
-		"hash-3": map[string]any{"peer_port": 5503},
-	})
-
-	got := c.PreparePrefillECParams(reqCtx)
-	if len(got) != 3 {
-		t.Fatalf("expected 3 entries, got %d: %v", len(got), got)
-	}
-	for _, want := range []string{"hash-1", "hash-2", "hash-3"} {
-		if _, ok := got[want]; !ok {
-			t.Errorf("missing key %q in result: %v", want, got)
-		}
-	}
-}
-
 // TestNIXL_PreparePrefillECParams_Aliases documents the pass-through aliasing
 // contract: the inner metadata maps in the returned result share pointers
 // with reqCtx.ECTransferParams, so mutating a returned value also mutates

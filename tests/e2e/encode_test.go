@@ -10,7 +10,7 @@
 //
 //	ENCODE_E2E_GATEWAY  base URL of the gateway (default http://localhost:8080)
 //	ENCODE_E2E_MODEL    model name to send in the request body (default Qwen/Qwen3-VL-2B-Instruct)
-//	ENCODE_E2E_EC       EC connector to use (default nixlv2)
+//	ENCODE_E2E_EC       EC connector to use (default nixl)
 //	RENDER_E2E_URL      base URL of the rendering service for chained tests (default http://localhost:8000)
 //
 // Each test exercises both encoder endpoints:
@@ -46,7 +46,7 @@ import (
 
 const (
 	defaultGatewayURL = "http://localhost:8080"
-	defaultECName     = ec.NIXLv2
+	defaultECName     = ec.NIXL
 	testImagePath     = "test-data/200.jpg"
 )
 
