@@ -126,9 +126,11 @@ lint: image-build-builder ## Run lint (use LINT_NEW_ONLY=true to only check new 
 test: test-unit ## Run all tests
 
 .PHONY: test-unit
-test-unit: image-build-builder
+test-unit: image-build-builder ## Run unit tests with coverage
+	@mkdir -p $(COVERAGE_DIR)
 	@printf "\033[33;1m==== Running Unit Tests ====\033[0m\n"
-	$(BUILDER_RUN) "go test -v -race $(TEST_PACKAGES)"
+	$(BUILDER_RUN) "go test -v -race -coverprofile=$(COVERAGE_DIR)/unit.out -covermode=atomic $(TEST_PACKAGES)"
+	$(BUILDER_RUN) 'go tool cover -func=$(COVERAGE_DIR)/unit.out | tail -1'
 
 .PHONY: build
 build: image-build-builder ## Build the coordinator binary
@@ -181,6 +183,28 @@ image-build-builder: check-container-tool ## Build builder image if missing loca
 .PHONY: image-build-epp
 image-build-epp: ## Clone llm-d-inference-scheduler at pinned commit and build EPP image
 	scripts/build-epp-image.sh
+
+##@ Coverage
+
+COVERAGE_DIR       ?= coverage
+COVERAGE_THRESHOLD ?= 0
+COVERAGE_LABEL     ?= main
+
+.PHONY: coverage-report
+coverage-report: image-build-builder ## Generate HTML coverage report (open coverage/*.html in browser)
+	$(BUILDER_RUN) 'for f in $(COVERAGE_DIR)/*.out; do \
+	    name=$$(basename "$$f" .out); \
+	    go tool cover -html="$$f" -o "$(COVERAGE_DIR)/$$name.html"; \
+	    printf "  $$name -> $(COVERAGE_DIR)/$$name.html\n"; \
+	done'
+
+.PHONY: coverage-compare
+coverage-compare: ## Compare coverage vs baseline (BASELINE_DIR=path; COVERAGE_LABEL=label)
+	@if [ -z "$(BASELINE_DIR)" ]; then \
+	    echo "ERROR: BASELINE_DIR is required (e.g. make coverage-compare BASELINE_DIR=coverage/baseline)"; \
+	    exit 1; \
+	fi
+	./scripts/compare-coverage.sh "$(BASELINE_DIR)" "$(COVERAGE_DIR)" "$(COVERAGE_THRESHOLD)" "$(COVERAGE_LABEL)"
 
 ##@ Kind Development Environment
 

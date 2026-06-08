@@ -93,9 +93,45 @@ jobs:
         shell: bash
         run: make build
 
+      # Missing cache is not an error; compare-coverage.sh reports the
+      # component as new and exits 0.
+      - name: Restore main branch coverage baseline
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@v5
+        with:
+          path: coverage/baseline
+          key: coverage-main
+
       - name: Run unit tests
         shell: bash
         run: make test-unit
 
+      - name: Compare coverage against main baseline
+        id: coverage-gate
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        shell: bash
+        run: make coverage-compare BASELINE_DIR=coverage/baseline
+
+      - name: Stage coverage baseline for caching
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        shell: bash
+        run: |
+          mkdir -p coverage/baseline
+          cp coverage/*.out coverage/baseline/
+
+      - name: Save coverage baseline (main branch only)
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: actions/cache/save@v5
+        with:
+          path: coverage/baseline
+          key: coverage-main
+
       - name: Build container image (no push)
         run: make image-build
+
+      - name: Enforce coverage gate
+        if: github.event_name == 'pull_request' && steps.coverage-gate.outcome == 'failure'
+        run: |
+          echo "::error::Coverage regression detected -- see the coverage report in the job summary above."
+          exit 1
