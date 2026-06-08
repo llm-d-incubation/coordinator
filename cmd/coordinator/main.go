@@ -49,6 +49,10 @@ func main() {
 	log.Info("pipeline connectors",
 		"kv_connector", cfg.Pipeline.KVConnector,
 		"ec_connector", cfg.Pipeline.ECConnector)
+	log.Info("proxy environment",
+		"HTTP_PROXY", os.Getenv("HTTP_PROXY"),
+		"HTTPS_PROXY", os.Getenv("HTTPS_PROXY"),
+		"NO_PROXY", os.Getenv("NO_PROXY"))
 
 	gwClient := gateway.New(cfg.Gateway)
 
