@@ -1,4 +1,4 @@
-name: CI - PR Checks
+name: CI - E2E tests for Coordinator
 
 on:
   push:
@@ -12,6 +12,10 @@ on:
 permissions:
   contents: read
   actions: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   check-changes:
@@ -27,16 +31,21 @@ jobs:
           filters: |
             src:
               - '**/*.go'
+              - deploy/**
+              - test/e2e/coordinator/**
               - Dockerfile.*
               - Makefile*
               - go.mod
-              - scripts/**
-              - .github/workflows/ci-pr-checks.yaml
+              - .github/workflows/ci-e2e-coordinator.yaml
 
-  lint-and-test:
+  coordinator-e2e:
     needs: check-changes
     if: ${{ needs.check-changes.outputs.src == 'true' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      GO_MOD_CACHE_VOL: /home/runner/.cache/llm-d-gomodcache
+      GO_BUILD_CACHE_VOL: /home/runner/.cache/llm-d-gobuildcache
     steps:
       - name: Checkout source
         uses: actions/checkout@v6
@@ -56,46 +65,29 @@ jobs:
           remove-miniconda: 'true'
           swapfile-size: 0
 
-      - name: Sanity check repo contents
-        run: ls -la
-
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
 
-      - name: Verify go.mod and go.sum are tidy
-        run: go mod tidy -diff
-
-      - name: Create and resolve Go cache volumes
-        id: go-cache
-        run: |
-          docker volume create llm-d-gomodcache
-          docker volume create llm-d-gobuildcache
-          echo "mod=$(docker volume inspect llm-d-gomodcache -f '{{.Mountpoint}}')" >> $GITHUB_OUTPUT
-          echo "build=$(docker volume inspect llm-d-gobuildcache -f '{{.Mountpoint}}')" >> $GITHUB_OUTPUT
+      - name: Create Go cache dirs
+        run: mkdir -p "$GO_MOD_CACHE_VOL" "$GO_BUILD_CACHE_VOL"
 
       - name: Cache Go modules and build cache
         uses: actions/cache@v5
         with:
           path: |
-            ${{ steps.go-cache.outputs.mod }}
-            ${{ steps.go-cache.outputs.build }}
-          key: go-cache-${{ hashFiles('go.sum') }}
+            ${{ env.GO_MOD_CACHE_VOL }}
+            ${{ env.GO_BUILD_CACHE_VOL }}
+          key: go-cache-${{ runner.os }}-${{ hashFiles('go.sum') }}
           restore-keys: |
-            go-cache-
+            go-cache-${{ runner.os }}-
 
-      - name: Run make lint
-        run: make lint
-
-      - name: Run make build
+      - name: Clean Docker system
         shell: bash
-        run: make build
+        run: docker system prune -af
 
-      - name: Run unit tests
+      - name: Run make test-e2e-coordinator
         shell: bash
-        run: make test-unit
-
-      - name: Build container image (no push)
-        run: make image-build
+        run: make test-e2e-coordinator
