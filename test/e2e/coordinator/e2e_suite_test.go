@@ -85,9 +85,8 @@ var (
 	eppImage         = env.GetEnvString("EPP_IMAGE", "ghcr.io/llm-d/llm-d-router-endpoint-picker:dev", ginkgo.GinkgoLogr)
 	vllmSimImage     = env.GetEnvString("VLLM_IMAGE", "ghcr.io/llm-d/llm-d-inference-sim:v0.9.1", ginkgo.GinkgoLogr)
 	vllmRenderImage  = env.GetEnvString("VLLM_RENDER_IMAGE", "vllm/vllm-openai-cpu:v0.21.0", ginkgo.GinkgoLogr)
-	sideCarImage     = env.GetEnvString("SIDECAR_IMAGE", "ghcr.io/llm-d/llm-d-router-disagg-sidecar:dev", ginkgo.GinkgoLogr)
 	coordinatorImage = env.GetEnvString("COORDINATOR_IMAGE", "", ginkgo.GinkgoLogr)
-	modelName        = env.GetEnvString("MODEL_NAME", "Qwen/Qwen3-VL-2B-Instruct", ginkgo.GinkgoLogr)
+	modelName        = env.GetEnvString("MODEL_NAME", "food-review", ginkgo.GinkgoLogr)
 
 	nsName     = env.GetEnvString("NAMESPACE", "default", ginkgo.GinkgoLogr)
 	k8sContext = env.GetEnvString("K8S_CONTEXT", "", ginkgo.GinkgoLogr)
@@ -176,13 +175,12 @@ func setupK8sCluster() {
 	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 	gomega.Eventually(session).WithTimeout(600 * time.Second).Should(gexec.Exit(0))
 
-	for _, img := range []string{vllmSimImage, vllmRenderImage, eppImage, sideCarImage, coordinatorImage} {
+	for _, img := range []string{vllmSimImage, vllmRenderImage, eppImage, coordinatorImage} {
 		kindLoadImage(img)
 	}
 }
 
 func kindLoadImage(image string) {
-	ensureImagePulled(image)
 	ginkgo.By(fmt.Sprintf("Loading %s into the cluster %s using %s", image, kindClusterName, containerRuntime))
 	if containerRuntime == "docker" {
 		nodeName := kindClusterName + "-control-plane"
@@ -201,19 +199,6 @@ func kindLoadImage(image string) {
 		return
 	}
 	command := exec.Command("kind", "--name", kindClusterName, "load", "docker-image", image)
-	session, err := gexec.Start(command, ginkgo.GinkgoWriter, ginkgo.GinkgoWriter)
-	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
-	gomega.Eventually(session).WithTimeout(600 * time.Second).Should(gexec.Exit(0))
-}
-
-// ensureImagePulled pulls image into the local image store when absent.
-// Locally built images (coordinator, EPP) are already present, so the pull is skipped.
-func ensureImagePulled(image string) {
-	if err := exec.Command(containerRuntime, "image", "inspect", image).Run(); err == nil {
-		return
-	}
-	ginkgo.By("Pulling " + image)
-	command := exec.Command(containerRuntime, "pull", image)
 	session, err := gexec.Start(command, ginkgo.GinkgoWriter, ginkgo.GinkgoWriter)
 	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 	gomega.Eventually(session).WithTimeout(600 * time.Second).Should(gexec.Exit(0))

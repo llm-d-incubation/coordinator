@@ -159,6 +159,11 @@ func createModelServers(encodeReplicas, prefillReplicas, decodeReplicas int) []s
 	docs = e2eutil.SubstituteMany(docs, subs)
 	docs = e2eutil.RemoveEmptyArgs(docs)
 	docs = e2eutil.RemoveEmptyLabels(docs)
+	// Remove the render sidecar when the model is simulated: the simulator does
+	// not load real weights, so the vllm-render container has nothing to serve.
+	if !isModelReal(subs["${MODEL_NAME}"]) {
+		docs = removeRenderSidecar(docs)
+	}
 	objects := testutils.CreateObjsFromYaml(testConfig, docs)
 	podsInDeploymentsReady(objects)
 	return objects
@@ -250,7 +255,6 @@ func allSubstitutions() map[string]string {
 		"${MODEL_NAME}":              modelName,
 		"${VLLM_IMAGE}":              vllmSimImage,
 		"${VLLM_RENDER_IMAGE}":       vllmRenderImage,
-		"${SIDECAR_IMAGE}":           sideCarImage,
 		"${VLLM_DATA_PARALLEL_SIZE}": "1",
 		"${VLLM_REPLICA_COUNT_E}":    "1",
 		"${VLLM_REPLICA_COUNT_P}":    "1",

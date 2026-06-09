@@ -18,15 +18,18 @@ package coordinate2e
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	apilabels "k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/yaml"
 )
 
 // Model-server pod selectors keyed by the llm-d.ai/role label.
@@ -79,4 +82,72 @@ func podsInDeploymentsReady(objects []string) {
 				Should(gomega.BeTrue())
 		}
 	}
+}
+
+// isModelReal reports whether modelName resolves to a model on Hugging Face.
+// A simulated model name returns false, so callers can drop the render sidecar.
+func isModelReal(modelName string) bool {
+	resp, err := http.Get("https://huggingface.co/api/models/" + modelName)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = resp.Body.Close() }()
+	return resp.StatusCode == http.StatusOK
+}
+
+// removeRenderSidecar takes a slice of YAML strings (each may contain multiple
+// objects separated by "---") and returns the same slice with the vllm-render
+// container and the model-cache volume stripped from any Deployment.
+func removeRenderSidecar(inputs []string) []string {
+	outputs := make([]string, len(inputs))
+	for idx, input := range inputs {
+		docs := strings.Split(input, "\n---")
+		rendered := make([]string, 0, len(docs))
+		for _, doc := range docs {
+			if strings.TrimSpace(doc) == "" {
+				continue
+			}
+			rendered = append(rendered, filterDocument(doc))
+		}
+		outputs[idx] = strings.Join(rendered, "\n---\n")
+	}
+	return outputs
+}
+
+func filterDocument(doc string) string {
+	obj := &unstructured.Unstructured{}
+	err := yaml.Unmarshal([]byte(doc), &obj.Object)
+	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+	if len(obj.Object) == 0 {
+		return doc
+	}
+	if obj.GetKind() == "Deployment" {
+		removePodSpecListItem(obj, "containers", "vllm-render")
+		removePodSpecListItem(obj, "initContainers", "vllm-render")
+		removePodSpecListItem(obj, "volumes", "model-cache")
+	}
+	out, err := yaml.Marshal(obj.Object)
+	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+	return strings.TrimRight(string(out), "\n")
+}
+
+func removePodSpecListItem(obj *unstructured.Unstructured, fieldName, itemName string) {
+	path := []string{"spec", "template", "spec", fieldName}
+	items, found, err := unstructured.NestedSlice(obj.Object, path...)
+	if err != nil || !found {
+		return
+	}
+	filtered := make([]any, 0, len(items))
+	for _, item := range items {
+		if m, ok := item.(map[string]any); ok && m["name"] == itemName {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	if len(filtered) == 0 {
+		unstructured.RemoveNestedField(obj.Object, path...)
+		return
+	}
+	err = unstructured.SetNestedSlice(obj.Object, filtered, path...)
+	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 }

@@ -4,8 +4,8 @@ SHELL := /usr/bin/env bash
 include versions.mk
 
 # Export all dev-env image references so the e2e suite sees them.
-export IMAGE_REGISTRY COORDINATOR_TAG VLLM_SIMULATOR_TAG EPP_TAG SIDECAR_TAG UDS_TOKENIZER_TAG
-export COORDINATOR_IMAGE VLLM_IMAGE VLLM_RENDER_IMAGE EPP_IMAGE SIDECAR_IMAGE UDS_TOKENIZER_IMAGE
+export IMAGE_REGISTRY COORDINATOR_TAG VLLM_SIMULATOR_TAG EPP_TAG UDS_TOKENIZER_TAG
+export COORDINATOR_IMAGE VLLM_IMAGE VLLM_RENDER_IMAGE EPP_IMAGE UDS_TOKENIZER_IMAGE
 
 # Defaults
 TARGETOS ?= $(shell command -v go >/dev/null 2>&1 && go env GOOS || uname -s | tr '[:upper:]' '[:lower:]')
@@ -131,7 +131,7 @@ test-unit: image-build-builder
 	$(BUILDER_RUN) "go test -v -race $(TEST_PACKAGES)"
 
 .PHONY: test-e2e-coordinator
-test-e2e-coordinator: image-build-coordinator image-build-epp image-build-builder ## Run coordinator e2e tests against a new kind cluster
+test-e2e-coordinator: image-build-coordinator image-build-epp image-build-builder image-pull ## Run coordinator e2e tests against a new kind cluster
 	test/scripts/run_e2e_coordinator.sh
 
 .PHONY: build
@@ -185,4 +185,9 @@ image-build-builder: check-container-tool ## Build builder image if missing loca
 .PHONY: image-build-epp
 image-build-epp: ## Clone llm-d-inference-scheduler at pinned commit and build EPP image
 	scripts/build-epp-image.sh
+
+.PHONY: image-pull
+image-pull: check-container-tool ## Pull all related images using $(CONTAINER_RUNTIME)
+	@printf "\033[33;1m==== Pulling Container images ====\033[0m\n"
+	./scripts/pull_images.sh
 
