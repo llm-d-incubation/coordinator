@@ -78,7 +78,7 @@ func runCoordinatorPipeline(body []byte) {
 	coordinator := createCoordinator(simpleConfig)
 
 	req, err := http.NewRequest(http.MethodPost,
-		coordinatorBaseURL+"/v1/chat/completions",
+		gatewayBaseURL+"/v1/chat/completions",
 		bytes.NewReader(body))
 	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 	req.Header.Set("Content-Type", "application/json")

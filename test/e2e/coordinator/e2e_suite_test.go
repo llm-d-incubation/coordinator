@@ -83,7 +83,7 @@ var (
 
 	containerRuntime = env.GetEnvString("CONTAINER_RUNTIME", "docker", ginkgo.GinkgoLogr)
 	eppImage         = env.GetEnvString("EPP_IMAGE", "ghcr.io/llm-d/llm-d-router-endpoint-picker:dev", ginkgo.GinkgoLogr)
-	vllmSimImage     = env.GetEnvString("VLLM_IMAGE", "ghcr.io/revit13/llm-d-inference-sim:dev-flag", ginkgo.GinkgoLogr)
+	vllmSimImage     = env.GetEnvString("VLLM_IMAGE", "ghcr.io/llm-d/llm-d-inference-sim:v0.9.2", ginkgo.GinkgoLogr)
 	vllmRenderImage  = env.GetEnvString("VLLM_RENDER_IMAGE", "vllm/vllm-openai-cpu:v0.21.0", ginkgo.GinkgoLogr)
 	coordinatorImage = env.GetEnvString("COORDINATOR_IMAGE", "", ginkgo.GinkgoLogr)
 	modelName        = env.GetEnvString("MODEL_NAME", "Qwen/Qwen3-VL-2B-Instruct", ginkgo.GinkgoLogr)
@@ -94,8 +94,9 @@ var (
 	readyTimeout = env.GetEnvDuration("READY_TIMEOUT", defaultReadyTimeout, ginkgo.GinkgoLogr)
 
 	coordinatorBaseURL = "http://localhost:" + coordinatorPort
+	gatewayBaseURL     = "http://localhost:" + gatewayPort
 
-	portForwardSession *gexec.Session
+	portForwardSessions []*gexec.Session
 )
 
 func TestCoordinatorE2E(t *testing.T) {
@@ -117,12 +118,16 @@ var _ = ginkgo.BeforeSuite(func() {
 	// workload (EPPs, pools, vLLM workers, coordinator) is created in the test body.
 	if k8sContext == "" {
 		setupInfra()
+	} else {
+		// Base infra (including Envoy) is pre-deployed; forward the gateway so
+		// the test can post to it. The kind nodePort mapping is unavailable here.
+		startPortForward("service/envoy", gatewayPort, "8081")
 	}
 })
 
 var _ = ginkgo.AfterSuite(func() {
-	if portForwardSession != nil {
-		portForwardSession.Terminate()
+	for _, session := range portForwardSessions {
+		session.Terminate()
 	}
 })
 
@@ -144,16 +149,17 @@ var _ = ginkgo.ReportAfterSuite("cleanup", func(report ginkgo.Report) {
 	gomega.Eventually(session).WithTimeout(60 * time.Second).Should(gexec.Exit())
 })
 
-// startCoordinatorPortForward forwards the local coordinator port to the
-// coordinator Deployment. Used when running against an existing cluster
-// (K8S_CONTEXT set), where the kind nodePort mapping is not available.
-func startCoordinatorPortForward() {
-	command := exec.Command("kubectl", "port-forward", "deployment/llm-d-coordinator",
-		coordinatorPort+":8080",
+// startPortForward forwards a local port to the given target (e.g.
+// "deployment/llm-d-coordinator" or "service/envoy"). Used when running against
+// an existing cluster (K8S_CONTEXT set), where the kind nodePort mapping is not
+// available. Sessions are tracked for teardown in AfterSuite.
+func startPortForward(target, localPort, remotePort string) {
+	command := exec.Command("kubectl", "port-forward", target,
+		localPort+":"+remotePort,
 		"--context="+k8sContext, "--namespace="+nsName)
-	var err error
-	portForwardSession, err = gexec.Start(command, ginkgo.GinkgoWriter, ginkgo.GinkgoWriter)
+	session, err := gexec.Start(command, ginkgo.GinkgoWriter, ginkgo.GinkgoWriter)
 	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+	portForwardSessions = append(portForwardSessions, session)
 }
 
 func setupK8sCluster() {

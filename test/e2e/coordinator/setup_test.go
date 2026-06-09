@@ -161,7 +161,7 @@ func createCoordinator(config string) []string {
 
 	podsInDeploymentsReady(objects)
 	if k8sContext != "" {
-		startCoordinatorPortForward()
+		startPortForward("deployment/llm-d-coordinator", coordinatorPort, "8080")
 	}
 	waitForCoordinatorReady()
 	return objects

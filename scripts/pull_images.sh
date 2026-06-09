@@ -8,7 +8,7 @@ echo "Using container tool: ${CONTAINER_RUNTIME}"
 # environment the Makefile exports.
 export COORDINATOR_IMAGE="${COORDINATOR_IMAGE:-ghcr.io/llm-d/llm-d-coordinator:dev}"
 export EPP_IMAGE="${EPP_IMAGE:-ghcr.io/llm-d/llm-d-router-endpoint-picker:dev}"
-export VLLM_IMAGE="${VLLM_IMAGE:-ghcr.io/llm-d/llm-d-inference-sim:v0.9.1}"
+export VLLM_IMAGE="${VLLM_IMAGE:-ghcr.io/llm-d/llm-d-inference-sim:v0.9.2}"
 export VLLM_RENDER_IMAGE="${VLLM_RENDER_IMAGE:-vllm/vllm-openai-cpu:v0.21.0}"
 
 TARGETOS="${TARGETOS:-linux}"

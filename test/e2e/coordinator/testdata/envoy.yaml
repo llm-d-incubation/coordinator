@@ -6,6 +6,11 @@
 # Envoy forwards the request to it via the ORIGINAL_DST cluster (just like
 # the single-pool e2e Envoy).
 #
+# A request without an EPP-Phase header is the external client request: it
+# matches the default route and is forwarded to the coordinator, the pipeline
+# entry point. The coordinator then re-enters the gateway once per phase with
+# the EPP-Phase header set, hitting the phase routes above.
+#
 # Placeholders ${NAMESPACE} and ${EPP_NAME} are substituted by the suite
 # before apply (mirrors single_pool/createEnvoy substitution pattern).
 apiVersion: v1
@@ -146,14 +151,30 @@ data:
                                         cluster_name: ext_proc_decode
                                         authority: ${EPP_NAME}-decode.${NAMESPACE}:9002
                                       timeout: 10s
+                            # default route — no EPP-Phase header — to the
+                            # coordinator, the pipeline entry point. ext_proc is
+                            # disabled here: the coordinator orchestrates the
+                            # phase calls itself rather than being picked by an EPP.
+                            - match:
+                                prefix: "/"
+                              route:
+                                cluster: coordinator
+                                timeout: 86400s
+                                idle_timeout: 86400s
+                                upgrade_configs:
+                                  - upgrade_type: websocket
+                              typed_per_filter_config:
+                                envoy.filters.http.ext_proc:
+                                  "@type": type.googleapis.com/envoy.extensions.filters.http.ext_proc.v3.ExtProcPerRoute
+                                  disabled: true
                     http_filters:
                       - name: envoy.filters.http.ext_proc
                         typed_config:
                           "@type": type.googleapis.com/envoy.extensions.filters.http.ext_proc.v3.ExternalProcessor
                           # Default ext_proc target — the per-route overrides above pick
                           # the actual phase EPP. A request without an EPP-Phase header
-                          # has no matching route and hits a 404 before reaching this
-                          # filter, so the default is only used as a wiring fallback.
+                          # matches the default route to the coordinator, which disables
+                          # ext_proc, so this default is only used as a wiring fallback.
                           grpc_service:
                             envoy_grpc:
                               cluster_name: ext_proc_encode
@@ -209,6 +230,21 @@ data:
           original_dst_lb_config:
             use_http_header: true
             http_header_name: x-gateway-destination-endpoint
+        # Coordinator backend — plain HTTP, resolved by Service DNS name. Serves
+        # the default (no EPP-Phase) route as the pipeline entry point.
+        - name: coordinator
+          type: STRICT_DNS
+          connect_timeout: 1000s
+          lb_policy: LEAST_REQUEST
+          load_assignment:
+            cluster_name: coordinator
+            endpoints:
+              - lb_endpoints:
+                  - endpoint:
+                      address:
+                        socket_address:
+                          address: llm-d-coordinator.${NAMESPACE}
+                          port_value: 8080
         # Three ext_proc clusters — one per phase EPP.
         - name: ext_proc_encode
           type: STRICT_DNS
