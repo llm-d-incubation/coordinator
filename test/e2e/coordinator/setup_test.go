@@ -159,11 +159,6 @@ func createModelServers(encodeReplicas, prefillReplicas, decodeReplicas int) []s
 	docs = e2eutil.SubstituteMany(docs, subs)
 	docs = e2eutil.RemoveEmptyArgs(docs)
 	docs = e2eutil.RemoveEmptyLabels(docs)
-	// Remove the render sidecar when the model is simulated: the simulator does
-	// not load real weights, so the vllm-render container has nothing to serve.
-	if !isModelReal(subs["${MODEL_NAME}"]) {
-		docs = removeRenderSidecar(docs)
-	}
 	objects := testutils.CreateObjsFromYaml(testConfig, docs)
 	podsInDeploymentsReady(objects)
 	return objects

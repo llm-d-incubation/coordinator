@@ -12,7 +12,7 @@ UDS_TOKENIZER_TAG    ?= v0.8.0
 
 # Full image references (derived; override only if you need a non-standard repo)
 COORDINATOR_IMAGE    ?= $(IMAGE_REGISTRY)/llm-d-coordinator:$(COORDINATOR_TAG)
-VLLM_IMAGE           ?= $(IMAGE_REGISTRY)/llm-d-inference-sim:$(VLLM_SIMULATOR_TAG)
+VLLM_IMAGE           ?= ghcr.io/revit13/llm-d-inference-sim:dev-flag
 VLLM_RENDER_IMAGE    ?= vllm/vllm-openai-cpu:v0.21.0
 EPP_IMAGE            ?= $(IMAGE_REGISTRY)/llm-d-router-endpoint-picker:$(EPP_TAG)
 UDS_TOKENIZER_IMAGE  ?= $(IMAGE_REGISTRY)/llm-d-uds-tokenizer:$(UDS_TOKENIZER_TAG)
