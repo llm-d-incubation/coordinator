@@ -31,60 +31,76 @@ import (
 
 const requestTimeout = 60 * time.Second
 
+// testImageURL is a publicly accessible image used to exercise multimodal
+// requests that trigger the encode stage.
+const testImageURL = "https://vllm-public-assets.s3.us-west-2.amazonaws.com/multimodal_asset/cat_snow.jpg"
+
 var _ = ginkgo.Describe("Coordinator pipeline", func() {
-	ginkgo.It("routes a chat completion end-to-end", func() {
-		// Pools first so each EPP can resolve its --pool-name.
-		encodePool := createInferencePool("encode", true)
-		prefillPool := createInferencePool("prefill", true)
-		decodePool := createInferencePool("decode", true)
-		expectAllPoolsExist()
-
-		encodeEPP := createEndPointPicker("encode", encodeEPPConfig)
-		prefillEPP := createEndPointPicker("prefill", prefillEPPConfig)
-		decodeEPP := createEndPointPicker("decode", decodeEPPConfig)
-
-		encodeReplicas, prefillReplicas, decodeReplicas := 1, 1, 1
-		modelServers := createModelServers(encodeReplicas, prefillReplicas, decodeReplicas)
-
-		encodePods := getPodNames(encodeSelector)
-		prefillPods := getPodNames(prefillSelector)
-		decodePods := getPodNames(decodeSelector)
-		gomega.Expect(encodePods).Should(gomega.HaveLen(encodeReplicas))
-		gomega.Expect(prefillPods).Should(gomega.HaveLen(prefillReplicas))
-		gomega.Expect(decodePods).Should(gomega.HaveLen(decodeReplicas))
-
-		coordinator := createCoordinator(simpleConfig)
-
-		body := []byte(fmt.Sprintf(
+	ginkgo.It("routes a text only chat completion end-to-end", func() {
+		runCoordinatorPipeline([]byte(fmt.Sprintf(
 			`{"model":%q,"messages":[{"role":"user","content":"hello"}]}`,
 			modelName,
-		))
+		)))
+	})
 
-		req, err := http.NewRequest(http.MethodPost,
-			coordinatorBaseURL+"/v1/chat/completions",
-			bytes.NewReader(body))
-		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
-		req.Header.Set("Content-Type", "application/json")
-
-		client := &http.Client{Timeout: requestTimeout}
-		resp, err := client.Do(req)
-		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
-		defer resp.Body.Close()
-
-		raw, err := io.ReadAll(resp.Body)
-		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
-
-		gomega.Expect(resp.StatusCode).To(gomega.Equal(http.StatusOK),
-			"coordinator returned non-200: body=%s", string(raw))
-		gomega.Expect(raw).NotTo(gomega.BeEmpty(), "coordinator returned empty body")
-
-		testutils.DeleteObjects(testConfig, coordinator)
-		testutils.DeleteObjects(testConfig, modelServers)
-		testutils.DeleteObjects(testConfig, decodeEPP)
-		testutils.DeleteObjects(testConfig, prefillEPP)
-		testutils.DeleteObjects(testConfig, encodeEPP)
-		testutils.DeleteObjects(testConfig, decodePool)
-		testutils.DeleteObjects(testConfig, prefillPool)
-		testutils.DeleteObjects(testConfig, encodePool)
+	ginkgo.It("routes a multimodal image chat completion end-to-end", func() {
+		runCoordinatorPipeline([]byte(fmt.Sprintf(
+			`{"model":%q,"messages":[{"role":"user","content":[{"type":"image_url","image_url":{"url":%q},"uuid":"image-0"},{"type":"text","text":"Describe what you see."}]}],"max_tokens":150}`,
+			modelName, testImageURL,
+		)))
 	})
 })
+
+// runCoordinatorPipeline deploys the e-p-d topology and coordinator, posts the
+// given chat-completion body, asserts a 200 with a non-empty body, then tears the
+// workload down.
+func runCoordinatorPipeline(body []byte) {
+	// Pools first so each EPP can resolve its --pool-name.
+	encodePool := createInferencePool("encode", true)
+	prefillPool := createInferencePool("prefill", true)
+	decodePool := createInferencePool("decode", true)
+	expectAllPoolsExist()
+
+	encodeEPP := createEndPointPicker("encode", encodeEPPConfig)
+	prefillEPP := createEndPointPicker("prefill", prefillEPPConfig)
+	decodeEPP := createEndPointPicker("decode", decodeEPPConfig)
+
+	encodeReplicas, prefillReplicas, decodeReplicas := 1, 1, 1
+	modelServers := createModelServers(encodeReplicas, prefillReplicas, decodeReplicas)
+
+	encodePods := getPodNames(encodeSelector)
+	prefillPods := getPodNames(prefillSelector)
+	decodePods := getPodNames(decodeSelector)
+	gomega.Expect(encodePods).Should(gomega.HaveLen(encodeReplicas))
+	gomega.Expect(prefillPods).Should(gomega.HaveLen(prefillReplicas))
+	gomega.Expect(decodePods).Should(gomega.HaveLen(decodeReplicas))
+
+	coordinator := createCoordinator(simpleConfig)
+
+	req, err := http.NewRequest(http.MethodPost,
+		coordinatorBaseURL+"/v1/chat/completions",
+		bytes.NewReader(body))
+	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: requestTimeout}
+	resp, err := client.Do(req)
+	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+	defer resp.Body.Close()
+
+	raw, err := io.ReadAll(resp.Body)
+	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+
+	gomega.Expect(resp.StatusCode).To(gomega.Equal(http.StatusOK),
+		"coordinator returned non-200: body=%s", string(raw))
+	gomega.Expect(raw).NotTo(gomega.BeEmpty(), "coordinator returned empty body")
+
+	testutils.DeleteObjects(testConfig, coordinator)
+	testutils.DeleteObjects(testConfig, modelServers)
+	testutils.DeleteObjects(testConfig, decodeEPP)
+	testutils.DeleteObjects(testConfig, prefillEPP)
+	testutils.DeleteObjects(testConfig, encodeEPP)
+	testutils.DeleteObjects(testConfig, decodePool)
+	testutils.DeleteObjects(testConfig, prefillPool)
+	testutils.DeleteObjects(testConfig, encodePool)
+}
