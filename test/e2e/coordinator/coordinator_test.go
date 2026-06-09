@@ -53,8 +53,6 @@ var _ = ginkgo.Describe("Coordinator pipeline", func() {
 		gomega.Expect(prefillPods).Should(gomega.HaveLen(prefillReplicas))
 		gomega.Expect(decodePods).Should(gomega.HaveLen(decodeReplicas))
 
-		waitForGatewayReady()
-
 		coordinator := createCoordinator(simpleConfig)
 
 		body := []byte(fmt.Sprintf(

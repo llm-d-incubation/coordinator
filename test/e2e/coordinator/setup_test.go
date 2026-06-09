@@ -65,8 +65,9 @@ func createCRDs() {
 
 // createEndPointPicker creates the scheduling ConfigMap and EPP Deployment (plus
 // its ServiceAccount, RoleBinding, and Service) for the given phase from the
-// supplied EPP config and waits for the EPP Deployment to become ready.
-func createEndPointPicker(phase, config string) {
+// supplied EPP config and waits for the EPP Deployment to become ready. Returns
+// the created object ids for cleanup.
+func createEndPointPicker(phase, config string) []string {
 	manifest := map[string]string{
 		"encode":  encodeEPPManifest,
 		"prefill": prefillEPPManifest,
@@ -80,11 +81,12 @@ func createEndPointPicker(phase, config string) {
 	objects[0] = "ConfigMap/" + cmName
 	objects = append(objects, applyManifest(manifest, eppSubstitutions())...)
 	podsInDeploymentsReady(objects)
+	return objects
 }
 
 // createInferencePool creates the InferencePool for the given phase. When
 // toDelete is set, the existing pool is removed first so the test starts clean.
-func createInferencePool(phase string, toDelete bool) {
+func createInferencePool(phase string, toDelete bool) []string {
 	manifest := map[string]string{
 		"encode":  encodePoolManifest,
 		"prefill": prefillPoolManifest,
@@ -97,7 +99,7 @@ func createInferencePool(phase string, toDelete bool) {
 
 	docs := testutils.ReadYaml(manifest)
 	docs = e2eutil.SubstituteMany(docs, eppSubstitutions())
-	testutils.CreateObjsFromYaml(testConfig, docs)
+	return testutils.CreateObjsFromYaml(testConfig, docs)
 }
 
 // deletePoolIfExists removes the named InferencePool when present so a rerun
