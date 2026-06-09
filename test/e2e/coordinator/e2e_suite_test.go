@@ -182,6 +182,7 @@ func setupK8sCluster() {
 }
 
 func kindLoadImage(image string) {
+	ensureImagePulled(image)
 	ginkgo.By(fmt.Sprintf("Loading %s into the cluster %s using %s", image, kindClusterName, containerRuntime))
 	if containerRuntime == "docker" {
 		nodeName := kindClusterName + "-control-plane"
@@ -200,6 +201,19 @@ func kindLoadImage(image string) {
 		return
 	}
 	command := exec.Command("kind", "--name", kindClusterName, "load", "docker-image", image)
+	session, err := gexec.Start(command, ginkgo.GinkgoWriter, ginkgo.GinkgoWriter)
+	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+	gomega.Eventually(session).WithTimeout(600 * time.Second).Should(gexec.Exit(0))
+}
+
+// ensureImagePulled pulls image into the local image store when absent.
+// Locally built images (coordinator, EPP) are already present, so the pull is skipped.
+func ensureImagePulled(image string) {
+	if err := exec.Command(containerRuntime, "image", "inspect", image).Run(); err == nil {
+		return
+	}
+	ginkgo.By("Pulling " + image)
+	command := exec.Command(containerRuntime, "pull", image)
 	session, err := gexec.Start(command, ginkgo.GinkgoWriter, ginkgo.GinkgoWriter)
 	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 	gomega.Eventually(session).WithTimeout(600 * time.Second).Should(gexec.Exit(0))
