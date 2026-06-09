@@ -33,9 +33,11 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/llm-d/coordinator/pkg/config"
 	"github.com/llm-d/coordinator/pkg/connectors/ec"
@@ -406,6 +408,7 @@ func TestE2E_Encode_DumpGenerateRequest(t *testing.T) {
 	}
 
 	body := map[string]any{
+		"model":     encodeModel(),
 		"token_ids": tokenIDs,
 		"features": map[string]any{
 			"mm_hashes":       map[string][]string{"image": {entry.Hash}},
@@ -479,6 +482,184 @@ func redactKwargsData(s, kwargs string) string {
 func redactDataURL(s, url string, urlLen int) string {
 	placeholder := fmt.Sprintf("<data:image/jpeg;base64,... %d bytes total>", urlLen)
 	return strings.ReplaceAll(s, url, placeholder)
+}
+
+// TestE2E_Encode_DiagnoseGenerateFailure runs the real EncodeStep with the
+// Generate variant against a request-capturing transport, then prints the
+// exact wire bytes (request line, headers, body) and the response. Useful
+// for diffing against TestE2E_Encode_DumpGenerateRequest, which sends a
+// nominally-identical body via http.DefaultClient and currently succeeds
+// even though the EncodeStep path returns HTTP 400.
+func TestE2E_Encode_DiagnoseGenerateFailure(t *testing.T) {
+	imageURL := loadTestImageDataURL(t)
+
+	rs := newRenderStep(t, renderURL())
+	reqCtx := &pipeline.RequestContext{
+		RequestID:    "e2e-diagnose-generate",
+		OriginalPath: gateway.PathChatCompletions,
+		Model:        encodeModel(),
+		Body: map[string]any{
+			"model": encodeModel(),
+			"messages": []any{
+				map[string]any{
+					"role": "user",
+					"content": []any{
+						map[string]any{"type": "text", "text": "Describe this image."},
+						map[string]any{"type": "image_url", "image_url": map[string]any{"url": imageURL}},
+					},
+				},
+			},
+		},
+		MultimodalEntries: []pipeline.MultimodalEntry{{Index: 0}},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	if err := rs.Execute(ctx, reqCtx); err != nil {
+		t.Fatalf("render failed: %v", err)
+	}
+
+	// Build an EncodeStep that sends through a capturing transport.
+	es, err := steps.NewEncodeStep(map[string]any{
+		"use_openai_format":    false, // Generate variant
+		"max_parallel":         1,
+		steps.ParamECConnector: ecConnectorName(),
+	})
+	if err != nil {
+		t.Fatalf("NewEncodeStep: %v", err)
+	}
+	captured := &capturingTransport{wrapped: http.DefaultTransport}
+	gw := gateway.New(config.GatewayConfig{
+		Address:             gatewayURL(),
+		MaxIdleConnsPerHost: 32,
+		IdleConnTimeout:     30 * time.Second,
+		Timeout:             60 * time.Second,
+	})
+	// Replace the gateway's transport with our capturing one. The Client
+	// type doesn't expose a setter, so we splice in a custom http.Client.
+	patchGatewayClientTransport(gw, &http.Client{Transport: captured})
+	es.(*steps.EncodeStep).SetGatewayClient(gw)
+
+	execErr := es.Execute(ctx, reqCtx)
+
+	if len(captured.requests) == 0 {
+		t.Fatal("no request captured")
+	}
+	for i, r := range captured.requests {
+		t.Logf("=== captured request %d ===", i)
+		t.Logf("%s %s", r.method, r.url)
+		for k, v := range r.headers {
+			t.Logf("  %s: %s", k, strings.Join(v, ", "))
+		}
+		t.Logf("body (%d bytes, kwargs_data redacted):\n%s", len(r.body), redactKwargsInJSON(r.body))
+		t.Logf("--- response %d ---", i)
+		t.Logf("HTTP %d", r.respStatus)
+		for k, v := range r.respHeaders {
+			t.Logf("  %s: %s", k, strings.Join(v, ", "))
+		}
+		t.Logf("body (%d bytes):\n%s", len(r.respBody), formatJSONOrRaw(r.respBody))
+	}
+
+	if execErr != nil {
+		t.Logf("EncodeStep.Execute returned: %v", execErr)
+	}
+}
+
+type capturedRequest struct {
+	method      string
+	url         string
+	headers     http.Header
+	body        []byte
+	respStatus  int
+	respHeaders http.Header
+	respBody    []byte
+}
+
+type capturingTransport struct {
+	wrapped  http.RoundTripper
+	requests []capturedRequest
+}
+
+func (c *capturingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	cap := capturedRequest{
+		method:  req.Method,
+		url:     req.URL.String(),
+		headers: req.Header.Clone(),
+	}
+	if req.Body != nil {
+		buf, err := io.ReadAll(req.Body)
+		if err != nil {
+			return nil, err
+		}
+		req.Body.Close()
+		cap.body = buf
+		req.Body = io.NopCloser(bytes.NewReader(buf))
+	}
+	resp, err := c.wrapped.RoundTrip(req)
+	if resp != nil {
+		respBody, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		cap.respStatus = resp.StatusCode
+		cap.respHeaders = resp.Header.Clone()
+		cap.respBody = respBody
+		resp.Body = io.NopCloser(bytes.NewReader(respBody))
+	}
+	c.requests = append(c.requests, cap)
+	return resp, err
+}
+
+// patchGatewayClientTransport replaces the unexported httpClient inside
+// gateway.Client by re-creating it with our custom transport. We
+// accomplish this via the package's exposed New() then mutate via the
+// Transport accessor. Since gateway.Client doesn't expose a setter, we
+// instead build a parallel client and rely on the encode step calling
+// Post -> Request -> httpClient.Do; the only seam is constructing the
+// gateway with a pre-built http.Client. Currently gateway.New always
+// builds a fresh transport. Workaround: use reflection.
+func patchGatewayClientTransport(gw *gateway.Client, c *http.Client) {
+	v := reflect.ValueOf(gw).Elem().FieldByName("httpClient")
+	if !v.IsValid() {
+		return
+	}
+	ptr := unsafe.Pointer(v.UnsafeAddr())
+	reflect.NewAt(v.Type(), ptr).Elem().Set(reflect.ValueOf(c))
+}
+
+func redactKwargsInJSON(body []byte) string {
+	var v any
+	if err := json.Unmarshal(body, &v); err != nil {
+		return string(body)
+	}
+	redactKwargsAny(v)
+	pretty, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return string(body)
+	}
+	return string(pretty)
+}
+
+func redactKwargsAny(v any) {
+	switch val := v.(type) {
+	case map[string]any:
+		if kd, ok := val["kwargs_data"].(map[string]any); ok {
+			for modality, list := range kd {
+				if arr, ok := list.([]any); ok {
+					for i, s := range arr {
+						if str, ok := s.(string); ok {
+							arr[i] = fmt.Sprintf("<base64 kwargs_data %s[%d], %d bytes>", modality, i, len(str))
+						}
+					}
+				}
+			}
+		}
+		for _, child := range val {
+			redactKwargsAny(child)
+		}
+	case []any:
+		for _, child := range val {
+			redactKwargsAny(child)
+		}
+	}
 }
 
 func formatJSONOrRaw(data []byte) string {
