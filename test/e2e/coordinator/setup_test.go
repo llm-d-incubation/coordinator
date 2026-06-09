@@ -17,8 +17,6 @@ limitations under the License.
 package coordinate2e
 
 import (
-	"bytes"
-	"io"
 	"net/http"
 	"strconv"
 	"time"
@@ -67,9 +65,8 @@ func createCRDs() {
 
 // createEndPointPicker creates the scheduling ConfigMap and EPP Deployment (plus
 // its ServiceAccount, RoleBinding, and Service) for the given phase from the
-// supplied EPP config and waits for the EPP Deployment to become ready. Returns
-// the created object ids for cleanup.
-func createEndPointPicker(phase, config string) []string {
+// supplied EPP config and waits for the EPP Deployment to become ready.
+func createEndPointPicker(phase, config string) {
 	manifest := map[string]string{
 		"encode":  encodeEPPManifest,
 		"prefill": prefillEPPManifest,
@@ -83,12 +80,11 @@ func createEndPointPicker(phase, config string) []string {
 	objects[0] = "ConfigMap/" + cmName
 	objects = append(objects, applyManifest(manifest, eppSubstitutions())...)
 	podsInDeploymentsReady(objects)
-	return objects
 }
 
 // createInferencePool creates the InferencePool for the given phase. When
 // toDelete is set, the existing pool is removed first so the test starts clean.
-func createInferencePool(phase string, toDelete bool) []string {
+func createInferencePool(phase string, toDelete bool) {
 	manifest := map[string]string{
 		"encode":  encodePoolManifest,
 		"prefill": prefillPoolManifest,
@@ -101,7 +97,7 @@ func createInferencePool(phase string, toDelete bool) []string {
 
 	docs := testutils.ReadYaml(manifest)
 	docs = e2eutil.SubstituteMany(docs, eppSubstitutions())
-	return testutils.CreateObjsFromYaml(testConfig, docs)
+	testutils.CreateObjsFromYaml(testConfig, docs)
 }
 
 // deletePoolIfExists removes the named InferencePool when present so a rerun
@@ -116,34 +112,6 @@ func deletePoolIfExists(name string) {
 	}
 	gomega.Expect(err).NotTo(gomega.HaveOccurred(), "checking InferencePool %s", name)
 	testutils.DeleteObjects(testConfig, []string{"InferencePool/" + name})
-}
-
-// waitForGatewayReady polls Envoy until the EPP ext_proc pipeline is wired up.
-// It sends a minimal POST with EPP-Phase: encode so the request matches an
-// Envoy route. Any non-connection-error response with a body (even 400) means
-// Envoy reached the EPP successfully.
-func waitForGatewayReady() {
-	ginkgo.By("Waiting for gateway to be ready")
-	probeBody := []byte(`{"token_ids":[1],"sampling_params":{"max_tokens":1}}`)
-	gomega.Eventually(func() bool {
-		req, err := http.NewRequest(http.MethodPost,
-			gatewayBaseURL+"/inference/v1/generate",
-			bytes.NewReader(probeBody))
-		if err != nil {
-			return false
-		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("EPP-Phase", "encode")
-
-		client := &http.Client{Timeout: 5 * time.Second}
-		resp, err := client.Do(req)
-		if err != nil {
-			return false
-		}
-		body, _ := io.ReadAll(resp.Body)
-		_ = resp.Body.Close()
-		return len(body) > 0
-	}, readyTimeout, defaultInterval).Should(gomega.BeTrue(), "gateway should be ready within the ready timeout")
 }
 
 // createModelServers deploys the vLLM encode/prefill/decode workers from the

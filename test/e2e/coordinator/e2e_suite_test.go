@@ -94,7 +94,6 @@ var (
 	readyTimeout = env.GetEnvDuration("READY_TIMEOUT", defaultReadyTimeout, ginkgo.GinkgoLogr)
 
 	coordinatorBaseURL = "http://localhost:" + coordinatorPort
-	gatewayBaseURL     = "http://localhost:" + gatewayPort
 
 	portForwardSession *gexec.Session
 )
