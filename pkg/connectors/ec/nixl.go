@@ -33,7 +33,7 @@ func (nixlEC) MergeEncodeResponse(reqCtx *pipeline.RequestContext, encResp map[s
 // mutate the result freely.
 func (nixlEC) PreparePrefillECParams(reqCtx *pipeline.RequestContext) (map[string]any, error) {
 	if len(reqCtx.ECTransferParams) == 0 {
-		return nil, nil
+		return make(map[string]any), nil
 	}
 	params := make(map[string]any, len(reqCtx.ECTransferParams))
 	for _, entry := range reqCtx.ECTransferParams {

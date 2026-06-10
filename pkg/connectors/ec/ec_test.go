@@ -52,8 +52,8 @@ func TestNIXL_MergeAndPrepare(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PreparePrefillECParams: %v", err)
 	}
-	if got != nil {
-		t.Fatalf("expected nil ec_transfer_params before encodes, got %v", got)
+	if len(got) != 0 {
+		t.Fatalf("expected empty ec_transfer_params before encodes, got %v", got)
 	}
 
 	resp1 := map[string]any{"hash-a": map[string]any{"peer_port": 5501, "size_bytes": 1228800, "nixl_agent_metadata_b64": "bml4..."}}
@@ -258,8 +258,8 @@ func TestNIXL_MergeIgnoresEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PreparePrefillECParams: %v", err)
 	}
-	if got != nil {
-		t.Fatalf("expected nil ec_transfer_params, got %v", got)
+	if len(got) != 0 {
+		t.Fatalf("expected empty ec_transfer_params, got %v", got)
 	}
 }
 
@@ -281,7 +281,7 @@ func TestSharedStorage_NoWireFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PreparePrefillECParams: %v", err)
 	}
-	if got != nil {
+	if len(got) != 0 {
 		t.Errorf("ec-shared-storage should emit no ec_transfer_params, got %v", got)
 	}
 }
