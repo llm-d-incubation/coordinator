@@ -14,5 +14,5 @@ func (sharedStorageEC) Name() string { return SharedStorage }
 func (sharedStorageEC) MergeEncodeResponse(_ *pipeline.RequestContext, _ map[string]any) {}
 
 func (sharedStorageEC) PreparePrefillECParams(_ *pipeline.RequestContext) (map[string]any, error) {
-	return map[string]any{}, nil
+	return nil, nil
 }
