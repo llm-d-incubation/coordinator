@@ -100,9 +100,9 @@ func TestPrefillStep_ConnectorShapesPrefillBody(t *testing.T) {
 }
 
 // TestDecodeStep_ConnectorShapesDecodeBody verifies the per-connector
-// kv_transfer_params shape sent on the decode request. nixl forwards all
+// kv_transfer_params shape sent on the decode request. kv-nixl forwards all
 // prefill response fields and overrides do_remote_decode/do_remote_prefill;
-// shared_storage emits only the two flags.
+// kv-shared-storage emits only the two flags.
 func TestDecodeStep_ConnectorShapesDecodeBody(t *testing.T) {
 	// nixlPrefillResponse simulates the kv_transfer_params returned by a
 	// nixl prefill worker (remote addressing fields filled in).

@@ -50,9 +50,9 @@ type RequestContext struct {
 	MultimodalEntries []MultimodalEntry
 	// ECTransferParams is an ordered list (one entry per encode response).
 	// Each entry is a single-key map: mm_hash -> per-encoding transfer
-	// descriptor (peer_port, size_bytes, nixl_agent_metadata_b64).
-	// Populated by EncodeStep when the EC connector is nixl; empty for
-	// shared_storage.
+	// descriptor (peer_host, peer_port, size_bytes, nixl_agent_metadata_b64).
+	// Populated by EncodeStep when the EC connector is ec-nixl; empty for
+	// ec-shared-storage.
 	ECTransferParams []map[string]any
 	KVTransferParams map[string]any
 

@@ -59,16 +59,16 @@ gateway:
 pipeline:
   # kv_connector picks the protocol used to coordinate KV-cache transfer
   # between prefill and decode pods.
-  #   kv-nixl        - NIXL P2P RDMA (default)
-  #   shared-storage - shared filesystem / object store
-  #   sglang         - SGLang-style KV bootstrap
-  kv_connector: kv-nixl
+  #   kv-nixl           - NIXL P2P RDMA
+  #   kv-shared-storage - shared filesystem / object store (default)
+  #   kv-sglang         - SGLang-style KV bootstrap
+  kv_connector: kv-shared-storage
 
   # ec_connector picks the protocol used to ship encoded multimodal embedding
   # tensors from encoder pods to prefill pods.
-  #   ec-nixl        - NIXL P2P RDMA
-  #   shared-storage - shared filesystem (default for non-RDMA clusters)
-  ec_connector: shared-storage
+  #   ec-nixl           - NIXL P2P RDMA
+  #   ec-shared-storage - shared filesystem (default for non-RDMA clusters)
+  ec_connector: ec-shared-storage
 
 
   steps:

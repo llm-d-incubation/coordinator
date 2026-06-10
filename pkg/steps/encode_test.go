@@ -129,6 +129,58 @@ func TestEncodeStep_ParallelFanOut(t *testing.T) {
 	}
 }
 
+// TestEncodeStep_SkipsInvalidECTransferParams verifies that an encoder
+// response whose ec_transfer_params is present but unusable (non-object,
+// explicit null, or empty object) is skipped rather than failing the encode,
+// matching the sidecar EC-NIXL proxy. Each case must succeed and record no
+// transfer params. The missing-field case is covered by
+// TestEncodeStep_EncoderReturnsNoECParams.
+func TestEncodeStep_SkipsInvalidECTransferParams(t *testing.T) {
+	cases := []struct {
+		name  string
+		value any
+	}{
+		{name: "NonObjectString", value: "not-an-object"},
+		{name: "NonObjectArray", value: []any{1, 2}},
+		{name: "ExplicitNull", value: nil},
+		{name: "EmptyObject", value: map[string]any{}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_ = json.NewEncoder(w).Encode(map[string]any{"ec_transfer_params": tc.value})
+			}))
+			defer server.Close()
+
+			step, err := NewEncodeStep(map[string]any{
+				"use_openai_format": false,
+				ParamECConnector:    ec.NIXL,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			step.(*EncodeStep).SetGatewayClient(gateway.New(config.GatewayConfig{Address: server.URL}))
+
+			reqCtx := &pipeline.RequestContext{
+				RequestID: "req-1",
+				Model:     testModelName,
+				TokenIDs:  []int{1, 32000, 32000, 2345},
+				MultimodalEntries: []pipeline.MultimodalEntry{
+					{Index: 0, Hash: "hash-a", KwargsData: "dGVuc29yLWE=", Placeholder: pipeline.PlaceholderRange{Offset: 1, Length: 3}},
+				},
+			}
+
+			if err := step.Execute(context.Background(), reqCtx); err != nil {
+				t.Fatalf("invalid ec_transfer_params should be skipped, not fail the encode: %v", err)
+			}
+			if len(reqCtx.ECTransferParams) != 0 {
+				t.Fatalf("expected no ec_transfer_params recorded, got %v", reqCtx.ECTransferParams)
+			}
+		})
+	}
+}
+
 func TestEncodeStep_PartialFailure(t *testing.T) {
 	var count atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

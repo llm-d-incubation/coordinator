@@ -10,6 +10,7 @@ import (
 
 	"github.com/llm-d/coordinator/pkg/config"
 	"github.com/llm-d/coordinator/pkg/connectors/ec"
+	"github.com/llm-d/coordinator/pkg/connectors/kv"
 	"github.com/llm-d/coordinator/pkg/gateway"
 	"github.com/llm-d/coordinator/pkg/pipeline"
 )
@@ -317,6 +318,73 @@ func TestPrefillStep_ChatCompletionsFormat(t *testing.T) {
 	}
 }
 
+// TestSharedStorage_OmitsECTransferParams_InPrefillBody verifies that the
+// ec-shared-storage EC connector never emits an ec_transfer_params field on
+// the prefill body, in every prefill wire format (chat-completions,
+// completions, generate). A regression that set the field unconditionally
+// would send "ec_transfer_params": null and silently break ec-shared-storage
+// deployments, where the consumer reads embeddings from shared storage.
+func TestSharedStorage_OmitsECTransferParams_InPrefillBody(t *testing.T) {
+	cases := []struct {
+		name         string
+		useOpenAI    bool
+		originalPath string
+		body         map[string]any
+	}{
+		{
+			name:         "ChatCompletions",
+			useOpenAI:    true,
+			originalPath: gateway.PathChatCompletions,
+			body: map[string]any{
+				"model":    "m",
+				"messages": []any{map[string]any{"role": "user", "content": "hi"}},
+			},
+		},
+		{name: "Completions", useOpenAI: true, originalPath: gateway.PathCompletions},
+		{name: "Generate", useOpenAI: false, originalPath: gateway.PathChatCompletions},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var raw []byte
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				raw, _ = io.ReadAll(r.Body)
+				_ = json.NewEncoder(w).Encode(map[string]any{"kv_transfer_params": map[string]any{}})
+			}))
+			defer server.Close()
+
+			step, err := NewPrefillStep(map[string]any{
+				"use_openai_format": tc.useOpenAI,
+				ParamECConnector:    ec.SharedStorage,
+			})
+			if err != nil {
+				t.Fatalf("NewPrefillStep: %v", err)
+			}
+			step.(*PrefillStep).SetGatewayClient(gateway.New(config.GatewayConfig{Address: server.URL}))
+
+			reqCtx := &pipeline.RequestContext{
+				RequestID:        "req",
+				OriginalPath:     tc.originalPath,
+				Model:            "m",
+				TokenIDs:         []int{1, 2, 3},
+				Body:             tc.body,
+				KVTransferParams: make(map[string]any),
+			}
+			if err := step.Execute(context.Background(), reqCtx); err != nil {
+				t.Fatalf("Execute: %v", err)
+			}
+
+			var parsed map[string]any
+			if err := json.Unmarshal(raw, &parsed); err != nil {
+				t.Fatalf("unmarshal prefill body: %v", err)
+			}
+			if _, ok := parsed["ec_transfer_params"]; ok {
+				t.Errorf("ec-shared-storage must not set ec_transfer_params; body=%s", raw)
+			}
+		})
+	}
+}
+
 func TestPrefillStep_GatewayError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)
@@ -345,5 +413,57 @@ func TestPrefillStep_GatewayError(t *testing.T) {
 	err := step.Execute(context.Background(), reqCtx)
 	if err == nil {
 		t.Fatal("expected error for 503 response")
+	}
+}
+
+// TestPrefillStep_CoercesInvalidKVTransferParams verifies that a prefill
+// response whose kv_transfer_params is not a usable JSON object (non-object
+// type, explicit null, empty object, or absent) is coerced to no transfer
+// params rather than failing the prefill step, mirroring the EC NIXL
+// connector's ecParamsFromResponse. Each case must succeed and leave
+// KVTransferParams empty.
+func TestPrefillStep_CoercesInvalidKVTransferParams(t *testing.T) {
+	cases := []struct {
+		name string
+		body map[string]any
+	}{
+		{name: "NonObjectString", body: map[string]any{"kv_transfer_params": "not-an-object"}},
+		{name: "NonObjectArray", body: map[string]any{"kv_transfer_params": []any{1, 2}}},
+		{name: "ExplicitNull", body: map[string]any{"kv_transfer_params": nil}},
+		{name: "EmptyObject", body: map[string]any{"kv_transfer_params": map[string]any{}}},
+		{name: "FieldAbsent", body: map[string]any{"other": "field"}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_ = json.NewEncoder(w).Encode(tc.body)
+			}))
+			defer server.Close()
+
+			step, err := NewPrefillStep(map[string]any{
+				"use_openai_format": false,
+				ParamKVConnector:    kv.NIXL,
+				ParamECConnector:    ec.NIXL,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			step.(*PrefillStep).SetGatewayClient(gateway.New(config.GatewayConfig{Address: server.URL}))
+
+			reqCtx := &pipeline.RequestContext{
+				RequestID:        "req-1",
+				Model:            "test-model",
+				TokenIDs:         []int{1, 2345},
+				KVTransferParams: make(map[string]any),
+			}
+
+			if err := step.Execute(context.Background(), reqCtx); err != nil {
+				t.Fatalf("invalid kv_transfer_params should be coerced, not fail the prefill: %v", err)
+			}
+			if len(reqCtx.KVTransferParams) != 0 {
+				t.Fatalf("expected no kv_transfer_params recorded, got %v", reqCtx.KVTransferParams)
+			}
+		})
 	}
 }

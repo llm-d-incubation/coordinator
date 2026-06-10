@@ -1,6 +1,10 @@
 package ec
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+
 	"github.com/llm-d/coordinator/pkg/pipeline"
 	logutil "github.com/llm-d/llm-d-router/pkg/common/observability/logging"
 )
@@ -15,7 +19,7 @@ func (nixlEC) Name() string { return NIXL }
 
 func (nixlEC) MergeEncodeResponse(reqCtx *pipeline.RequestContext, encResp map[string]any) {
 	if len(encResp) == 0 {
-		logger.V(logutil.DEBUG).Info("encoder returned no ec_transfer_params; no nixl descriptor will be forwarded for this image",
+		logger.Info("warning: encoder returned no ec_transfer_params; no nixl descriptor will be forwarded for this image",
 			"requestID", reqCtx.RequestID)
 		return
 	}
@@ -23,27 +27,72 @@ func (nixlEC) MergeEncodeResponse(reqCtx *pipeline.RequestContext, encResp map[s
 	logger.V(logutil.TRACE).Info("merged encode response", "total", len(reqCtx.ECTransferParams))
 }
 
-func (nixlEC) PreparePrefillECParams(reqCtx *pipeline.RequestContext) map[string]any {
+// PreparePrefillECParams flattens the per-image encode responses into a single
+// map keyed by mm_hash for the prefill request body. The returned map and its
+// descriptors are independent copies of reqCtx.ECTransferParams, so callers may
+// mutate the result freely.
+func (nixlEC) PreparePrefillECParams(reqCtx *pipeline.RequestContext) (map[string]any, error) {
 	if len(reqCtx.ECTransferParams) == 0 {
-		return nil
+		return map[string]any{}, nil
 	}
 	params := make(map[string]any, len(reqCtx.ECTransferParams))
-	var dups []string
 	for _, entry := range reqCtx.ECTransferParams {
 		for k, v := range entry {
-			if _, exists := params[k]; exists {
-				dups = append(dups, k)
+			if v == nil {
+				// A hash with no descriptor carries nothing to transfer; drop it
+				// so the prefill body never sends "<mm_hash>": null.
+				logger.V(logutil.DEBUG).Info("dropping ec_transfer_params entry with no descriptor",
+					"mmHash", k, "requestID", reqCtx.RequestID)
+				continue
 			}
-			// v aliases the inner metadata map in reqCtx.ECTransferParams[i];
-			// the returned params shares pointers in both directions. Callers
-			// must not mutate either side after this call returns.
-			params[k] = v
+			desc := copyDescriptor(v)
+			if existing, exists := params[k]; exists {
+				// Two encoder replicas answered for the same mm_hash. Identical
+				// descriptors are harmless; conflicting ones are not. Picking
+				// one (last-write-wins) would point the prefill pull at a peer
+				// that may have rotated its buffers, so reject the request.
+				equal, err := descriptorsEqual(existing, desc)
+				if err != nil {
+					return nil, fmt.Errorf("ec_transfer_params: comparing descriptors for mm_hash %q: %w", k, err)
+				}
+				if !equal {
+					return nil, fmt.Errorf("ec_transfer_params: conflicting descriptors for mm_hash %q across encoder responses", k)
+				}
+				continue
+			}
+			params[k] = desc
 		}
 	}
-	if len(dups) > 0 {
-		logger.Info("warning: duplicate ec_transfer_params keys across encoder responses; last-write-wins",
-			"keys", dups, "requestID", reqCtx.RequestID)
-	}
 	logger.V(logutil.TRACE).Info("preparing prefill ec params", "entries", len(params))
-	return params
+	return params, nil
+}
+
+// copyDescriptor returns a shallow copy of a descriptor map so the prepared
+// prefill params do not alias reqCtx.ECTransferParams. Non-map values carry no
+// mutable aliasing risk and are returned unchanged.
+func copyDescriptor(v any) any {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return v
+	}
+	cp := make(map[string]any, len(m))
+	for key, val := range m {
+		cp[key] = val
+	}
+	return cp
+}
+
+// descriptorsEqual reports whether two ec_transfer_params descriptors are
+// byte-equal under canonical JSON encoding. encoding/json sorts object keys,
+// so the comparison is independent of map iteration order.
+func descriptorsEqual(a, b any) (bool, error) {
+	ab, err := json.Marshal(a)
+	if err != nil {
+		return false, err
+	}
+	bb, err := json.Marshal(b)
+	if err != nil {
+		return false, err
+	}
+	return bytes.Equal(ab, bb), nil
 }

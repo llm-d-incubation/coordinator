@@ -2,5 +2,5 @@ package ec
 
 const (
 	NIXL          = "ec-nixl"
-	SharedStorage = "shared-storage"
+	SharedStorage = "ec-shared-storage"
 )
