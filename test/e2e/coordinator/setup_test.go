@@ -33,6 +33,29 @@ import (
 	testutils "github.com/llm-d/llm-d-router/test/utils"
 )
 
+// setupNameSpace creates the test namespace if it does not already exist and
+// records whether it was created so AfterSuite can delete it on cleanup.
+func setupNameSpace() {
+	if nsName == "default" {
+		return
+	}
+	_, err := testConfig.KubeCli.CoreV1().Namespaces().Get(testConfig.Context, nsName, metav1.GetOptions{})
+	if err == nil {
+		return
+	}
+	gomega.Expect(apierrors.IsNotFound(err)).To(gomega.BeTrue())
+
+	ginkgo.By("Creating namespace " + nsName)
+	ns := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: nsName,
+		},
+	}
+	_, err = testConfig.KubeCli.CoreV1().Namespaces().Create(testConfig.Context, ns, metav1.CreateOptions{})
+	gomega.Expect(err).NotTo(gomega.HaveOccurred())
+	createdNameSpace = true
+}
+
 // setupInfra installs the base infra shared across tests: Gateway API + GIE
 // CRDs, the epp-reader Role, and Envoy. Runs only on suite-owned kind clusters;
 // with K8S_CONTEXT set the caller is responsible for having base infra in place.

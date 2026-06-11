@@ -74,7 +74,34 @@ var _ = ginkgo.Describe("Coordinator pipeline", func() {
 // tears the workload down. expectedImages is the number of images in the
 // request; when > 0 the encoder ec_transfer_params count is also verified.
 func runCoordinatorPipeline(body []byte, expectedSteps []string, expectedImages int) {
-	// Dump coordinator logs on failure, or always when E2E_PRINT_COORDINATOR_LOGS is set.
+	var (
+		coordinator  []string
+		modelServers []string
+		decodeEPP    []string
+		prefillEPP   []string
+		encodeEPP    []string
+		decodePool   []string
+		prefillPool  []string
+		encodePool   []string
+	)
+
+	// Registered first → runs last (LIFO), after the log dump below.
+	ginkgo.DeferCleanup(func() {
+		if keepClusterOnFailure && ginkgo.CurrentSpecReport().Failed() {
+			return
+		}
+		testutils.DeleteObjects(testConfig, coordinator)
+		testutils.DeleteObjects(testConfig, modelServers)
+		testutils.DeleteObjects(testConfig, decodeEPP)
+		testutils.DeleteObjects(testConfig, prefillEPP)
+		testutils.DeleteObjects(testConfig, encodeEPP)
+		testutils.DeleteObjects(testConfig, decodePool)
+		testutils.DeleteObjects(testConfig, prefillPool)
+		testutils.DeleteObjects(testConfig, encodePool)
+	})
+
+	// Dump coordinator logs on failure, or always when E2E_PRINT_COORDINATOR_LOGS is
+	// set. Registered second → runs first (LIFO), so the deployment still exists.
 	ginkgo.DeferCleanup(func() {
 		if !ginkgo.CurrentSpecReport().Failed() && !printCoordinatorLogs {
 			return
@@ -85,23 +112,25 @@ func runCoordinatorPipeline(body []byte, expectedSteps []string, expectedImages 
 			args = append(args, "--context="+k8sContext)
 		}
 		out, err := exec.Command("kubectl", args...).CombinedOutput()
-		if err == nil {
+		if err != nil {
+			fmt.Fprintf(ginkgo.GinkgoWriter, "\n--- coordinator logs (kubectl error: %v) ---\n%s\n---\n", err, string(out))
+		} else {
 			fmt.Fprintf(ginkgo.GinkgoWriter, "\n--- coordinator logs ---\n%s\n---\n", string(out))
 		}
 	})
 
 	// Pools first so each EPP can resolve its --pool-name.
-	encodePool := createInferencePool("encode", true)
-	prefillPool := createInferencePool("prefill", true)
-	decodePool := createInferencePool("decode", true)
+	encodePool = createInferencePool("encode", true)
+	prefillPool = createInferencePool("prefill", true)
+	decodePool = createInferencePool("decode", true)
 	expectAllPoolsExist()
 
-	encodeEPP := createEndPointPicker("encode", encodeEPPConfig)
-	prefillEPP := createEndPointPicker("prefill", prefillEPPConfig)
-	decodeEPP := createEndPointPicker("decode", decodeEPPConfig)
+	encodeEPP = createEndPointPicker("encode", encodeEPPConfig)
+	prefillEPP = createEndPointPicker("prefill", prefillEPPConfig)
+	decodeEPP = createEndPointPicker("decode", decodeEPPConfig)
 
 	encodeReplicas, prefillReplicas, decodeReplicas := 1, 1, 1
-	modelServers := createModelServers(encodeReplicas, prefillReplicas, decodeReplicas)
+	modelServers = createModelServers(encodeReplicas, prefillReplicas, decodeReplicas)
 
 	encodePods := getPodNames(encodeSelector)
 	prefillPods := getPodNames(prefillSelector)
@@ -110,7 +139,7 @@ func runCoordinatorPipeline(body []byte, expectedSteps []string, expectedImages 
 	gomega.Expect(prefillPods).Should(gomega.HaveLen(prefillReplicas))
 	gomega.Expect(decodePods).Should(gomega.HaveLen(decodeReplicas))
 
-	coordinator := createCoordinator(simpleConfig)
+	coordinator = createCoordinator(coordinatorConfigNIXL)
 
 	req, err := http.NewRequest(http.MethodPost,
 		gatewayBaseURL+"/v1/chat/completions",
@@ -131,15 +160,6 @@ func runCoordinatorPipeline(body []byte, expectedSteps []string, expectedImages 
 	gomega.Expect(raw).NotTo(gomega.BeEmpty(), "coordinator returned empty body")
 
 	verifyCoordinatorSteps(expectedSteps, expectedImages)
-
-	testutils.DeleteObjects(testConfig, coordinator)
-	testutils.DeleteObjects(testConfig, modelServers)
-	testutils.DeleteObjects(testConfig, decodeEPP)
-	testutils.DeleteObjects(testConfig, prefillEPP)
-	testutils.DeleteObjects(testConfig, encodeEPP)
-	testutils.DeleteObjects(testConfig, decodePool)
-	testutils.DeleteObjects(testConfig, prefillPool)
-	testutils.DeleteObjects(testConfig, encodePool)
 }
 
 // verifyCoordinatorSteps fetches the coordinator pod logs and asserts that

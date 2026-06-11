@@ -18,4 +18,4 @@ trap cleanup INT TERM
 echo "Running coordinator end-to-end tests"
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-go test -v -timeout 120m ${DIR}/../e2e/coordinator/ -ginkgo.v -ginkgo.fail-fast
+NAMESPACE="${NAMESPACE:-default}" go test -v -timeout 120m ${DIR}/../e2e/coordinator/ -ginkgo.v -ginkgo.fail-fast

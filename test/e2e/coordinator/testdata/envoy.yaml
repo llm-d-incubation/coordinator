@@ -79,6 +79,7 @@ data:
                   typed_config:
                     "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
                     stat_prefix: http-8081
+                    preserve_external_request_id: true
                     route_config:
                       name: vllm
                       virtual_hosts:

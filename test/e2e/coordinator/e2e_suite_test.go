@@ -34,6 +34,7 @@ import (
 	"github.com/onsi/gomega"
 	"github.com/onsi/gomega/gexec"
 	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	k8slog "sigs.k8s.io/controller-runtime/pkg/log"
@@ -80,7 +81,7 @@ var (
 
 	testConfig *testutils.TestConfig
 
-	keepClusterOnFailure  = env.GetEnvBool("E2E_KEEP_CLUSTER_ON_FAILURE", false, ginkgo.GinkgoLogr)
+	keepClusterOnFailure = env.GetEnvBool("E2E_KEEP_CLUSTER_ON_FAILURE", false, ginkgo.GinkgoLogr)
 	printCoordinatorLogs = env.GetEnvBool("E2E_PRINT_COORDINATOR_LOGS", false, ginkgo.GinkgoLogr)
 
 	containerRuntime = env.GetEnvString("CONTAINER_RUNTIME", "docker", ginkgo.GinkgoLogr)
@@ -100,6 +101,7 @@ var (
 
 	portForwardSessions []*gexec.Session
 	rendererObjects     []string
+	createdNameSpace    bool
 )
 
 func TestCoordinatorE2E(t *testing.T) {
@@ -115,6 +117,7 @@ var _ = ginkgo.BeforeSuite(func() {
 	}
 	testConfig = testutils.NewTestConfig(nsName, k8sContext)
 	setupK8sClient()
+	setupNameSpace()
 
 	// Base infra (CRDs, RBAC, Envoy) is created here on suite-owned kind clusters.
 	// With K8S_CONTEXT set, base infra is assumed pre-deployed; the per-test
@@ -130,21 +133,22 @@ var _ = ginkgo.BeforeSuite(func() {
 	rendererObjects = createRenderer()
 })
 
-var _ = ginkgo.AfterSuite(func() {
+var _ = ginkgo.ReportAfterSuite("cleanup", func(report ginkgo.Report) {
+	if k8sContext == "" && keepClusterOnFailure && !report.SuiteSucceeded {
+		ginkgo.By("Keeping kind cluster " + kindClusterName + " due to suite failure (E2E_KEEP_CLUSTER_ON_FAILURE=true)")
+		return
+	}
 	if len(rendererObjects) > 0 {
 		testutils.DeleteObjects(testConfig, rendererObjects)
 	}
 	for _, session := range portForwardSessions {
 		session.Terminate()
 	}
-})
-
-var _ = ginkgo.ReportAfterSuite("cleanup", func(report ginkgo.Report) {
-	if k8sContext != "" {
-		return
+	if createdNameSpace {
+		err := testConfig.KubeCli.CoreV1().Namespaces().Delete(testConfig.Context, nsName, metav1.DeleteOptions{})
+		gomega.Expect(err).NotTo(gomega.HaveOccurred())
 	}
-	if keepClusterOnFailure && !report.SuiteSucceeded {
-		ginkgo.By("Keeping kind cluster " + kindClusterName + " due to suite failure (E2E_KEEP_CLUSTER_ON_FAILURE=true)")
+	if k8sContext != "" {
 		return
 	}
 	ginkgo.By("Deleting kind cluster " + kindClusterName)

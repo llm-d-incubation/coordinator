@@ -16,9 +16,9 @@ limitations under the License.
 
 package coordinate2e
 
-// simpleConfig is the coordinator pipeline config for the e-p-d-pools topology.
+// coordinatorConfigNIXL is the coordinator pipeline config for the e-p-d-pools topology.
 // ${NAMESPACE} is substituted by createCoordinator before the ConfigMap is built.
-const simpleConfig = `log_level: 5
+const coordinatorConfigNIXL = `log_level: 5
 server:
   listen_addr: ":8080"
   read_timeout: 30s
