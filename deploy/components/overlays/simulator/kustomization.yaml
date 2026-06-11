@@ -32,11 +32,28 @@ patches:
     - op: add
       path: /spec/template/spec/containers/0/args/-
       value: "--force-dummy-tokenizer"
-# --- Prefill and Encode deployments (vllm-[pe]) ---
+    - op: add
+      path: /spec/template/spec/containers/0/args/-
+      value: "--max-model-len=131072"
+# --- Encode deployment (vllm-e) ---
 - target:
     kind: Deployment
-    name: "vllm-[pe]"
+    name: vllm-e
   patch: |
     - op: add
       path: /spec/template/spec/containers/0/args/-
       value: "--force-dummy-tokenizer"
+    - op: add
+      path: /spec/template/spec/containers/0/args/-
+      value: "--max-model-len=131072"
+# --- Prefill deployment (vllm-p) ---
+- target:
+    kind: Deployment
+    name: vllm-p
+  patch: |
+    - op: add
+      path: /spec/template/spec/containers/0/args/-
+      value: "--force-dummy-tokenizer"
+    - op: add
+      path: /spec/template/spec/containers/0/args/-
+      value: "--max-model-len=131072"

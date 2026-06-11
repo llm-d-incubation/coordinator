@@ -16,44 +16,6 @@ spec:
     spec:
       serviceAccountName: llm-d-coordinator
       terminationGracePeriodSeconds: 30
-      initContainers:
-      - name: vllm-render
-        image: ${VLLM_RENDER_IMAGE}
-        imagePullPolicy: IfNotPresent
-        restartPolicy: Always
-        command: ["vllm"]
-        args: ["launch", "render", "${MODEL_NAME}", "--port=8000"]
-        env:
-        - name: HF_TOKEN
-          value: "${HF_TOKEN}"
-        ports:
-        - name: render-http
-          containerPort: 8000
-        startupProbe:
-          httpGet:
-            path: /health
-            port: 8000
-          initialDelaySeconds: 2
-          periodSeconds: 1
-          failureThreshold: 600
-          timeoutSeconds: 1
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 8000
-          periodSeconds: 10
-          failureThreshold: 5
-          timeoutSeconds: 1
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 8000
-          periodSeconds: 5
-          failureThreshold: 1
-          timeoutSeconds: 1
-        volumeMounts:
-        - name: model-cache
-          mountPath: /root/.cache/huggingface
       containers:
       - name: coordinator
         image: ${COORDINATOR_IMAGE}
@@ -83,8 +45,6 @@ spec:
       - name: config
         configMap:
           name: llm-d-coordinator-config
-      - name: model-cache
-        emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

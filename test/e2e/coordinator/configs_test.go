@@ -42,8 +42,8 @@ pipeline:
         max_concurrent_downloads: 10
     - type: render
       params:
-        address: "http://localhost:8000"
-        timeout: 30s
+        address: "http://vllm-render.${NAMESPACE}.svc:8000"
+        timeout: 60s
     - type: encode
       params:
         max_parallel: 8

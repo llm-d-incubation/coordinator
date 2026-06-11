@@ -167,9 +167,16 @@ func createCoordinator(config string) []string {
 	return objects
 }
 
-// waitForCoordinatorReady polls /readyz on the coordinator until HTTP 200.
+// waitForCoordinatorReady polls /readyz on the coordinator until HTTP 200 via
+// two paths: the direct NodePort and the Envoy gateway's default route. Both
+// must succeed before the test sends inference requests.
+//
+// The NodePort check confirms the coordinator pod is up. The gateway check
+// confirms Envoy's STRICT_DNS coordinator cluster has resolved, which can lag
+// because the coordinator Service is created per-test while Envoy starts once
+// at suite setup.
 func waitForCoordinatorReady() {
-	ginkgo.By("Waiting for coordinator to be ready")
+	ginkgo.By("Waiting for coordinator to be ready (direct)")
 	gomega.Eventually(func() bool {
 		client := &http.Client{Timeout: 5 * time.Second}
 		resp, err := client.Get(coordinatorBaseURL + "/readyz")
@@ -179,6 +186,17 @@ func waitForCoordinatorReady() {
 		_ = resp.Body.Close()
 		return resp.StatusCode == http.StatusOK
 	}, readyTimeout, defaultInterval).Should(gomega.BeTrue(), "coordinator should be ready within the ready timeout")
+
+	ginkgo.By("Waiting for coordinator to be reachable via gateway")
+	gomega.Eventually(func() bool {
+		client := &http.Client{Timeout: 5 * time.Second}
+		resp, err := client.Get(gatewayBaseURL + "/readyz")
+		if err != nil {
+			return false
+		}
+		_ = resp.Body.Close()
+		return resp.StatusCode == http.StatusOK
+	}, readyTimeout, defaultInterval).Should(gomega.BeTrue(), "coordinator should be reachable via gateway within the ready timeout")
 }
 
 func createEPPConfigMap(name, content string) {
@@ -219,7 +237,6 @@ func allSubstitutions() map[string]string {
 		"${POOL_NAME}":               poolNameBase,
 		"${MODEL_NAME}":              modelName,
 		"${VLLM_IMAGE}":              vllmSimImage,
-		"${VLLM_RENDER_IMAGE}":       vllmRenderImage,
 		"${VLLM_DATA_PARALLEL_SIZE}": "1",
 		"${VLLM_REPLICA_COUNT_E}":    "1",
 		"${VLLM_REPLICA_COUNT_P}":    "1",
@@ -244,8 +261,26 @@ func allSubstitutions() map[string]string {
 func coordinatorSubstitutions() map[string]string {
 	return map[string]string{
 		"${COORDINATOR_IMAGE}": coordinatorImage,
-		"${MODEL_NAME}":        modelName,
+	}
+}
+
+// rendererSubstitutions returns the substitution map for the vllm-render
+// component manifests.
+func rendererSubstitutions() map[string]string {
+	return map[string]string{
 		"${VLLM_RENDER_IMAGE}": vllmRenderImage,
+		"${MODEL_NAME}":        modelName,
 		"${HF_TOKEN}":          "",
 	}
+}
+
+// createRenderer deploys the vllm-render component and waits for readiness.
+func createRenderer() []string {
+	ginkgo.By("Deploying vllm-render")
+	docs := e2eutil.RunKustomize(rendererComponentDir)
+	docs = e2eutil.SubstituteMany(docs, rendererSubstitutions())
+	docs = e2eutil.RemoveEmptyArgs(docs)
+	objects := testutils.CreateObjsFromYaml(testConfig, docs)
+	podsInDeploymentsReady(objects)
+	return objects
 }

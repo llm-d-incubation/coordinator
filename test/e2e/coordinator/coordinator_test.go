@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/onsi/ginkgo/v2"
@@ -31,30 +33,63 @@ import (
 
 const requestTimeout = 60 * time.Second
 
-// testImageURL is a publicly accessible image used to exercise multimodal
-// requests that trigger the encode stage.
+// testImageURL and testImageURL2 are publicly accessible images used to
+// exercise multimodal requests that trigger the encode stage.
 const testImageURL = "https://vllm-public-assets.s3.us-west-2.amazonaws.com/multimodal_asset/cat_snow.jpg"
+const testImageURL2 = "https://vllm-public-assets.s3.us-west-2.amazonaws.com/multimodal_asset/flycatcher.jpeg"
+
+var (
+	// allSteps lists the full pipeline steps for multimodal requests.
+	allSteps = []string{"replace-media-urls", "render", "encode", "prefill", "decode"}
+	// textOnlySteps lists the pipeline steps for text-only requests.
+	textOnlySteps = []string{"prefill", "decode"}
+)
 
 var _ = ginkgo.Describe("Coordinator pipeline", func() {
 	ginkgo.It("routes a text only chat completion end-to-end", func() {
 		runCoordinatorPipeline([]byte(fmt.Sprintf(
 			`{"model":%q,"messages":[{"role":"user","content":"hello"}]}`,
 			modelName,
-		)))
+		)), textOnlySteps, 0)
 	})
 
 	ginkgo.It("routes a multimodal image chat completion end-to-end", func() {
 		runCoordinatorPipeline([]byte(fmt.Sprintf(
 			`{"model":%q,"messages":[{"role":"user","content":[{"type":"image_url","image_url":{"url":%q},"uuid":"image-0"},{"type":"text","text":"Describe what you see."}]}],"max_tokens":150}`,
 			modelName, testImageURL,
-		)))
+		)), allSteps, 1)
+	})
+
+	ginkgo.It("routes a multimodal chat completion with two images end-to-end", func() {
+		runCoordinatorPipeline([]byte(fmt.Sprintf(
+			`{"model":%q,"messages":[{"role":"user","content":[{"type":"image_url","image_url":{"url":%q},"uuid":"image-0"},{"type":"image_url","image_url":{"url":%q},"uuid":"image-1"},{"type":"text","text":"What is in these two images?"}]}],"max_tokens":150}`,
+			modelName, testImageURL, testImageURL2,
+		)), allSteps, 2)
 	})
 })
 
 // runCoordinatorPipeline deploys the e-p-d topology and coordinator, posts the
-// given chat-completion body, asserts a 200 with a non-empty body, then tears the
-// workload down.
-func runCoordinatorPipeline(body []byte) {
+// given chat-completion body, asserts a 200 with a non-empty body, verifies
+// that the coordinator logs show all expected pipeline steps completed, then
+// tears the workload down. expectedImages is the number of images in the
+// request; when > 0 the encoder ec_transfer_params count is also verified.
+func runCoordinatorPipeline(body []byte, expectedSteps []string, expectedImages int) {
+	// Dump coordinator logs on failure so we can see which step errored.
+	ginkgo.DeferCleanup(func() {
+		if !ginkgo.CurrentSpecReport().Failed() {
+			return
+		}
+		args := []string{"logs", "deployment/llm-d-coordinator",
+			"-c", "coordinator", "--namespace=" + nsName}
+		if k8sContext != "" {
+			args = append(args, "--context="+k8sContext)
+		}
+		out, err := exec.Command("kubectl", args...).CombinedOutput()
+		if err == nil {
+			fmt.Fprintf(ginkgo.GinkgoWriter, "\n--- coordinator logs on failure ---\n%s\n---\n", string(out))
+		}
+	})
+
 	// Pools first so each EPP can resolve its --pool-name.
 	encodePool := createInferencePool("encode", true)
 	prefillPool := createInferencePool("prefill", true)
@@ -95,6 +130,8 @@ func runCoordinatorPipeline(body []byte) {
 		"coordinator returned non-200: body=%s", string(raw))
 	gomega.Expect(raw).NotTo(gomega.BeEmpty(), "coordinator returned empty body")
 
+	verifyCoordinatorSteps(expectedSteps, expectedImages)
+
 	testutils.DeleteObjects(testConfig, coordinator)
 	testutils.DeleteObjects(testConfig, modelServers)
 	testutils.DeleteObjects(testConfig, decodeEPP)
@@ -103,4 +140,62 @@ func runCoordinatorPipeline(body []byte) {
 	testutils.DeleteObjects(testConfig, decodePool)
 	testutils.DeleteObjects(testConfig, prefillPool)
 	testutils.DeleteObjects(testConfig, encodePool)
+}
+
+// verifyCoordinatorSteps fetches the coordinator pod logs and asserts that
+// every expected step has a "step complete" log entry. When expectedImages > 0,
+// it also verifies that the encode step reported the correct number of
+// ec_transfer_params entries via the "merged encode response" total.
+func verifyCoordinatorSteps(expectedSteps []string, expectedImages int) {
+	ginkgo.By("Verifying coordinator logs contain all pipeline steps")
+
+	args := []string{"logs", "deployment/llm-d-coordinator",
+		"-c", "coordinator", "--namespace=" + nsName}
+	if k8sContext != "" {
+		args = append(args, "--context="+k8sContext)
+	}
+
+	out, err := exec.Command("kubectl", args...).CombinedOutput()
+	gomega.Expect(err).ShouldNot(gomega.HaveOccurred(),
+		"failed to fetch coordinator logs: %s", string(out))
+
+	logs := string(out)
+	for _, step := range expectedSteps {
+		stepField := `"step":"` + step + `"`
+
+		// Verify the step was actually completed (not just started).
+		completed := false
+		for _, line := range strings.Split(logs, "\n") {
+			if strings.Contains(line, `"msg":"step complete"`) &&
+				strings.Contains(line, stepField) {
+				completed = true
+				break
+			}
+		}
+		gomega.Expect(completed).To(gomega.BeTrue(),
+			"coordinator logs have no 'step complete' entry for step %q", step)
+	}
+
+	if expectedImages > 0 {
+		ginkgo.By("Verifying encode returned ec_transfer_params for all images")
+		// The encoder logs "merged encode response","total":<N> as it
+		// accumulates ec_transfer_params from each sub-request, and
+		// "all sub-requests complete","count":<N> when done.
+		ecMarker := fmt.Sprintf(`"msg":"merged encode response","total":%d`, expectedImages)
+		gomega.Expect(logs).To(gomega.ContainSubstring(ecMarker),
+			"coordinator logs missing merged encode response with total=%d", expectedImages)
+
+		countMarker := `"msg":"all sub-requests complete"`
+		countField := fmt.Sprintf(`"count":%d`, expectedImages)
+		found := false
+		for _, line := range strings.Split(logs, "\n") {
+			if strings.Contains(line, countMarker) &&
+				strings.Contains(line, countField) {
+				found = true
+				break
+			}
+		}
+		gomega.Expect(found).To(gomega.BeTrue(),
+			"coordinator logs missing 'all sub-requests complete' with count=%d", expectedImages)
+	}
 }

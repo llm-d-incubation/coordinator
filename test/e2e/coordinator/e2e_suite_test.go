@@ -64,6 +64,7 @@ const (
 
 	epdPoolsKustomizeDir    = "../../../deploy/environments/dev/epd-pools"
 	coordinatorComponentDir = "../../../deploy/components/coordinator"
+	rendererComponentDir    = "../../../deploy/components/vllm-render"
 
 	envoyManifest = "testdata/envoy.yaml"
 
@@ -97,6 +98,7 @@ var (
 	gatewayBaseURL     = "http://localhost:" + gatewayPort
 
 	portForwardSessions []*gexec.Session
+	rendererObjects     []string
 )
 
 func TestCoordinatorE2E(t *testing.T) {
@@ -123,9 +125,14 @@ var _ = ginkgo.BeforeSuite(func() {
 		// the test can post to it. The kind nodePort mapping is unavailable here.
 		startPortForward("service/envoy", gatewayPort, "8081")
 	}
+
+	rendererObjects = createRenderer()
 })
 
 var _ = ginkgo.AfterSuite(func() {
+	if len(rendererObjects) > 0 {
+		testutils.DeleteObjects(testConfig, rendererObjects)
+	}
 	for _, session := range portForwardSessions {
 		session.Terminate()
 	}
