@@ -58,6 +58,7 @@ K8S_CONTEXT=kind-e2e-coordinator-tests go test -v ./test/e2e/coordinator/...
 | `NAMESPACE` | `default` | Namespace to deploy test resources into |
 | `K8S_CONTEXT` | _(empty)_ | Use an existing cluster context instead of creating a Kind cluster |
 | `E2E_KEEP_CLUSTER_ON_FAILURE` | `false` | Preserve the Kind cluster when the suite fails |
+| `E2E_PRINT_COORDINATOR_LOGS` | `false` | Print coordinator pod logs after every test, not just on failure |
 
 ## Submitting Changes
 

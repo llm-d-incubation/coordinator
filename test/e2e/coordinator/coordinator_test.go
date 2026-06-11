@@ -74,9 +74,9 @@ var _ = ginkgo.Describe("Coordinator pipeline", func() {
 // tears the workload down. expectedImages is the number of images in the
 // request; when > 0 the encoder ec_transfer_params count is also verified.
 func runCoordinatorPipeline(body []byte, expectedSteps []string, expectedImages int) {
-	// Dump coordinator logs on failure so we can see which step errored.
+	// Dump coordinator logs on failure, or always when E2E_PRINT_COORDINATOR_LOGS is set.
 	ginkgo.DeferCleanup(func() {
-		if !ginkgo.CurrentSpecReport().Failed() {
+		if !ginkgo.CurrentSpecReport().Failed() && !printCoordinatorLogs {
 			return
 		}
 		args := []string{"logs", "deployment/llm-d-coordinator",
@@ -86,7 +86,7 @@ func runCoordinatorPipeline(body []byte, expectedSteps []string, expectedImages 
 		}
 		out, err := exec.Command("kubectl", args...).CombinedOutput()
 		if err == nil {
-			fmt.Fprintf(ginkgo.GinkgoWriter, "\n--- coordinator logs on failure ---\n%s\n---\n", string(out))
+			fmt.Fprintf(ginkgo.GinkgoWriter, "\n--- coordinator logs ---\n%s\n---\n", string(out))
 		}
 	})
 
