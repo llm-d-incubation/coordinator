@@ -33,8 +33,8 @@ gateway:
   use_openai_format: true
 
 pipeline:
-  kv_connector: nixlv2
-  ec_connector: nixlv2
+  kv_connector: kv-nixl
+  ec_connector: ec-nixl
   steps:
     - type: replace-media-urls
       params:
