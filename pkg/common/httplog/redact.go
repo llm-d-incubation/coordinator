@@ -27,7 +27,10 @@ func isSensitiveHeader(name string) bool {
 // headers replaced by a redaction sentinel. It accepts either http.Header
 // (map[string][]string) or map[string]string and always returns the flat
 // form. Keys are normalized to lowercase so log output is consistent
-// regardless of how the input was canonicalized.
+// regardless of how the input was canonicalized. A multi-valued header keeps
+// only its first value. A header with no value (an empty slice or an empty
+// string) retains its key with an empty-string value, so both input forms
+// behave the same.
 func RedactedHeaders[V string | []string](h map[string]V) map[string]string {
 	out := make(map[string]string, len(h))
 	for k, v := range h {
@@ -40,9 +43,11 @@ func RedactedHeaders[V string | []string](h map[string]V) map[string]string {
 		case string:
 			out[lower] = val
 		case []string:
+			first := ""
 			if len(val) > 0 {
-				out[lower] = val[0]
+				first = val[0]
 			}
+			out[lower] = first
 		}
 	}
 	return out

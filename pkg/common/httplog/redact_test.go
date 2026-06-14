@@ -56,9 +56,16 @@ func TestRedactedHeaders_RedactsSensitiveRegardlessOfInputCase(t *testing.T) {
 	}
 }
 
-func TestRedactedHeaders_EmptyValueSliceOmitted(t *testing.T) {
-	out := RedactedHeaders(http.Header{"X-Empty": {}})
-	if _, ok := out["x-empty"]; ok {
-		t.Errorf("header with no values should be omitted, got %v", out)
+// An empty value retains the key with an empty string, whether the input is a
+// valueless slice or an empty string, so both input forms behave the same.
+func TestRedactedHeaders_EmptyValueRetainsKey(t *testing.T) {
+	fromSlice := RedactedHeaders(http.Header{"X-Empty": {}})
+	if got, ok := fromSlice["x-empty"]; !ok || got != "" {
+		t.Errorf("x-empty = %q (present=%v), want %q present", got, ok, "")
+	}
+
+	fromString := RedactedHeaders(map[string]string{"X-Empty": ""})
+	if got, ok := fromString["x-empty"]; !ok || got != "" {
+		t.Errorf("x-empty = %q (present=%v), want %q present", got, ok, "")
 	}
 }
