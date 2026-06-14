@@ -38,6 +38,10 @@ func SubstituteMany(inputs []string, substitutions map[string]string) []string {
 
 // RemoveEmptyArgs strips YAML list items that are empty strings after variable
 // substitution (e.g. `- ""` produced when VLLM_EXTRA_ARGS_* is unset).
+//
+// This is line-based string surgery: it drops any line trimming to `- ""` or
+// `-`. It assumes the test manifests use such list items only as substitution
+// placeholders, never as legitimate empty args.
 func RemoveEmptyArgs(inputs []string) []string {
 	outputs := make([]string, len(inputs))
 	for idx, input := range inputs {
@@ -88,6 +92,10 @@ func extractKind(doc string) string {
 
 // RemoveEmptyLabels strips YAML lines where the llm-d.ai/role label value is
 // empty after variable substitution.
+//
+// This is line-based string surgery: it drops any line ending in `:` that
+// contains llm-d.ai/role. It assumes the test manifests use that label only as
+// a substitution placeholder at the expected indentation.
 func RemoveEmptyLabels(inputs []string) []string {
 	outputs := make([]string, len(inputs))
 	for idx, input := range inputs {

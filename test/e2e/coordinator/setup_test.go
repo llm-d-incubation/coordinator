@@ -201,25 +201,24 @@ func createCoordinator(config string) []string {
 func waitForCoordinatorReady() {
 	ginkgo.By("Waiting for coordinator to be ready (direct)")
 	gomega.Eventually(func() bool {
-		client := &http.Client{Timeout: 5 * time.Second}
-		resp, err := client.Get(coordinatorBaseURL + "/readyz")
-		if err != nil {
-			return false
-		}
-		_ = resp.Body.Close()
-		return resp.StatusCode == http.StatusOK
+		return pollReady(coordinatorBaseURL + "/readyz")
 	}, readyTimeout, defaultInterval).Should(gomega.BeTrue(), "coordinator should be ready within the ready timeout")
 
 	ginkgo.By("Waiting for coordinator to be reachable via gateway")
 	gomega.Eventually(func() bool {
-		client := &http.Client{Timeout: 5 * time.Second}
-		resp, err := client.Get(gatewayBaseURL + "/readyz")
-		if err != nil {
-			return false
-		}
-		_ = resp.Body.Close()
-		return resp.StatusCode == http.StatusOK
+		return pollReady(gatewayBaseURL + "/readyz")
 	}, readyTimeout, defaultInterval).Should(gomega.BeTrue(), "coordinator should be reachable via gateway within the ready timeout")
+}
+
+// pollReady reports whether a GET on url returns HTTP 200 within the client timeout.
+func pollReady(url string) bool {
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return false
+	}
+	_ = resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
 }
 
 func createEPPConfigMap(name, content string) {
