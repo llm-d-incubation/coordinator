@@ -222,7 +222,7 @@ func kvParamsFromResponse(logger logr.Logger, v any, requestID string) map[strin
 		return m
 	default:
 		logger.V(logutil.DEBUG).Info("kv_transfer_params is not a JSON object; skipping",
-			"requestID", requestID, "type", fmt.Sprintf("%T", v))
+			reqcommon.RequestIDHeaderKey, requestID, "type", fmt.Sprintf("%T", v))
 		return nil
 	}
 }

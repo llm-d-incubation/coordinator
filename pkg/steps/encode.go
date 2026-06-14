@@ -257,7 +257,7 @@ func ecParamsFromResponse(logger logr.Logger, v any, idx int, requestID string) 
 		return m
 	default:
 		logger.V(logutil.DEBUG).Info("ec_transfer_params is not a JSON object; skipping",
-			"index", idx, "requestID", requestID, "type", fmt.Sprintf("%T", v))
+			"index", idx, reqcommon.RequestIDHeaderKey, requestID, "type", fmt.Sprintf("%T", v))
 		return nil
 	}
 }
