@@ -49,9 +49,12 @@ func main() {
 	log.Info("pipeline connectors",
 		"kv_connector", cfg.Pipeline.KVConnector,
 		"ec_connector", cfg.Pipeline.ECConnector)
+	// Log presence only: proxy URLs can carry basic-auth credentials
+	// (http://user:pass@host) and must not reach startup logs. NO_PROXY is a
+	// plain host list, so it is safe to log verbatim.
 	log.Info("proxy environment",
-		"HTTP_PROXY", os.Getenv("HTTP_PROXY"),
-		"HTTPS_PROXY", os.Getenv("HTTPS_PROXY"),
+		"http_proxy_set", os.Getenv("HTTP_PROXY") != "",
+		"https_proxy_set", os.Getenv("HTTPS_PROXY") != "",
 		"NO_PROXY", os.Getenv("NO_PROXY"))
 
 	gwClient := gateway.New(cfg.Gateway)

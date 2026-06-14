@@ -148,7 +148,9 @@ func (s *ReplaceMediaURLsStep) Execute(ctx context.Context, reqCtx *pipeline.Req
 		})
 	}
 
-	logger.V(logutil.TRACE).Info("downloading images", "count", len(imageURLs), "http_proxy", os.Getenv("HTTP_PROXY"), "https_proxy", os.Getenv("HTTPS_PROXY"))
+	// Log proxy presence only: HTTP(S)_PROXY URLs can carry basic-auth
+	// credentials (http://user:pass@host) that must not reach logs.
+	logger.V(logutil.TRACE).Info("downloading images", "count", len(imageURLs), "http_proxy_set", os.Getenv("HTTP_PROXY") != "", "https_proxy_set", os.Getenv("HTTPS_PROXY") != "")
 
 	if err := g.Wait(); err != nil {
 		return err

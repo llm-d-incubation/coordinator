@@ -601,12 +601,13 @@ func TestReplaceMediaURLsStep_DownloadUnreachable(t *testing.T) {
 	}
 }
 
-// The downloader must leave http.Client.Transport nil so it uses
-// http.DefaultTransport, whose Proxy is http.ProxyFromEnvironment. That is the
-// only reason image fetches honor HTTP_PROXY/HTTPS_PROXY. A custom transport
-// without a Proxy field (as in pkg/gateway/client.go) would silently bypass the
-// proxy; this test fails if that regression is introduced here.
-func TestReplaceMediaURLsStep_ClientHonorsProxyEnv(t *testing.T) {
+// Structural guard, not a behavioral proxy test. The downloader must leave
+// http.Client.Transport nil so it uses http.DefaultTransport, whose Proxy is
+// http.ProxyFromEnvironment. That is the only reason image fetches honor
+// HTTP_PROXY/HTTPS_PROXY. A custom transport without a Proxy field (as in
+// pkg/gateway/client.go) would silently bypass the proxy; this test fails if
+// that regression is introduced here.
+func TestReplaceMediaURLsStep_ClientUsesDefaultTransport(t *testing.T) {
 	step, err := NewReplaceMediaURLsStep(map[string]any{})
 	if err != nil {
 		t.Fatal(err)
