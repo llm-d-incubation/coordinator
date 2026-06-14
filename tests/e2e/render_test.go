@@ -15,8 +15,14 @@
 package e2e
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -183,6 +189,116 @@ func TestE2E_Completions_TokenArray(t *testing.T) {
 	}
 	if got, want := reqCtx.TokenIDs, []int{1, 2345, 6789}; !equalInts(got, want) {
 		t.Fatalf("TokenIDs = %v, want %v", got, want)
+	}
+}
+
+// TestE2E_DumpRenderChatCompletions POSTs a chat-completions body containing
+// the real test image to <renderURL>/v1/chat/completions/render and prints
+// the request, the response, the response size, len(token_ids), and the
+// per-modality feature counts (mm_hashes / mm_placeholders / kwargs_data).
+func TestE2E_DumpRenderChatCompletions(t *testing.T) {
+	imageURL := loadTestImageDataURL(t)
+
+	body := map[string]any{
+		"model": modelName(),
+		"messages": []any{
+			map[string]any{
+				"role": "user",
+				"content": []any{
+					map[string]any{"type": "text", "text": "Describe this image."},
+					map[string]any{"type": "image_url", "image_url": map[string]any{"url": imageURL}},
+				},
+			},
+		},
+	}
+
+	bodyBytes, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal body: %v", err)
+	}
+	pretty, err := json.MarshalIndent(body, "", "  ")
+	if err != nil {
+		t.Fatalf("pretty body: %v", err)
+	}
+
+	url := renderURL() + gateway.PathChatCompletions + "/render"
+
+	t.Log("=== REQUEST ===")
+	t.Logf("POST %s", url)
+	t.Logf("body (%d bytes, image data: URL redacted; real length %d):\n%s",
+		len(bodyBytes), len(imageURL),
+		strings.ReplaceAll(string(pretty), imageURL, fmt.Sprintf("<data:image/jpeg;base64,... %d bytes total>", len(imageURL))))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(bodyBytes))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+
+	respBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read response: %v", err)
+	}
+
+	t.Log("=== RESPONSE ===")
+	t.Logf("HTTP %d", resp.StatusCode)
+	for k, v := range resp.Header {
+		t.Logf("  %s: %s", k, strings.Join(v, ", "))
+	}
+	t.Logf("response size: %d bytes", len(respBytes))
+
+	if resp.StatusCode/100 != 2 {
+		t.Fatalf("non-2xx response: %s", string(respBytes))
+	}
+
+	// Parse to extract sizes/lengths.
+	var parsed struct {
+		TokenIDs []int `json:"token_ids"`
+		Features struct {
+			MMHashes       map[string][]string `json:"mm_hashes"`
+			MMPlaceholders map[string][]any    `json:"mm_placeholders"`
+			KwargsData     map[string][]string `json:"kwargs_data"`
+		} `json:"features"`
+	}
+	if err := json.Unmarshal(respBytes, &parsed); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	t.Logf("len(token_ids): %d", len(parsed.TokenIDs))
+	for modality, hashes := range parsed.Features.MMHashes {
+		t.Logf("features.mm_hashes[%q]: count=%d, values=%v", modality, len(hashes), hashes)
+	}
+	for modality, placeholders := range parsed.Features.MMPlaceholders {
+		t.Logf("features.mm_placeholders[%q]: count=%d, values=%v", modality, len(placeholders), placeholders)
+	}
+	for modality, kwargs := range parsed.Features.KwargsData {
+		totalBytes := 0
+		for _, k := range kwargs {
+			totalBytes += len(k)
+		}
+		t.Logf("features.kwargs_data[%q]: count=%d, total bytes (sum of base64 lengths)=%d", modality, len(kwargs), totalBytes)
+	}
+
+	// Pretty-print the response body, redacting kwargs_data which dominates the size.
+	for modality, kwargs := range parsed.Features.KwargsData {
+		for i, k := range kwargs {
+			placeholder := fmt.Sprintf("<base64 kwargs_data %s[%d], %d bytes>", modality, i, len(k))
+			respBytes = bytes.ReplaceAll(respBytes, []byte(k), []byte(placeholder))
+		}
+	}
+	var redactedAny any
+	if err := json.Unmarshal(respBytes, &redactedAny); err == nil {
+		if redactedPretty, err := json.MarshalIndent(redactedAny, "", "  "); err == nil {
+			t.Logf("body (kwargs_data redacted):\n%s", string(redactedPretty))
+		}
 	}
 }
 

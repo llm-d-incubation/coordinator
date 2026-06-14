@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/llm-d/coordinator/pkg/config"
+	"github.com/llm-d/coordinator/pkg/connectors/kv"
 	"github.com/llm-d/coordinator/pkg/gateway"
 	"github.com/llm-d/coordinator/pkg/pipeline"
 )
@@ -90,7 +91,7 @@ func TestDecodeStep_NonStreaming(t *testing.T) {
 
 	gwClient := gateway.New(config.GatewayConfig{Address: server.URL})
 
-	step, err := NewDecodeStep(map[string]any{})
+	step, err := NewDecodeStep(map[string]any{ParamKVConnector: kv.NIXL})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,6 +139,43 @@ func TestDecodeStep_NonStreaming(t *testing.T) {
 	respBody, _ := io.ReadAll(result.Body)
 	if !strings.Contains(string(respBody), "I see a cat.") {
 		t.Fatalf("expected response to contain 'I see a cat.', got: %s", string(respBody))
+	}
+}
+
+func TestDecodeStep_CompletionsFormat_NoRenderedTokens(t *testing.T) {
+	var parsed map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &parsed)
+		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []map[string]any{{"text": "ok"}}})
+	}))
+	defer server.Close()
+
+	gwClient := gateway.New(config.GatewayConfig{Address: server.URL})
+	step, err := NewDecodeStep(map[string]any{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	step.(*DecodeStep).SetGatewayClient(gwClient)
+
+	recorder := httptest.NewRecorder()
+	reqCtx := &pipeline.RequestContext{
+		RequestID:        "req-compl",
+		OriginalPath:     gateway.PathCompletions,
+		Model:            "test-model",
+		TokenIDs:         nil,
+		KVTransferParams: map[string]any{},
+		Body:             map[string]any{"model": "test-model", "prompt": "Hello"},
+		ResponseWriter:   recorder,
+	}
+
+	if err := step.Execute(context.Background(), reqCtx); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if parsed["prompt"] != "Hello" {
+		t.Fatalf("expected original prompt to pass through, got %v", parsed["prompt"])
 	}
 }
 

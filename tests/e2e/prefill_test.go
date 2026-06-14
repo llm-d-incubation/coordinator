@@ -10,8 +10,8 @@
 //
 //	ENCODE_E2E_GATEWAY  base URL of the gateway (default http://localhost:8080)
 //	ENCODE_E2E_MODEL    model name (default Qwen/Qwen3-VL-2B-Instruct)
-//	ENCODE_E2E_EC       EC connector to use (default nixlv2)
-//	ENCODE_E2E_KV       KV connector to use (default nixlv2)
+//	ENCODE_E2E_EC       EC connector to use (default ec-nixl)
+//	ENCODE_E2E_KV       KV connector to use (default kv-nixl)
 //	RENDER_E2E_URL      base URL of the rendering service (default http://localhost:8000)
 //
 // The matrix:
@@ -37,7 +37,7 @@ import (
 	"github.com/llm-d/coordinator/pkg/steps"
 )
 
-const defaultKVName = kv.NIXLv2
+const defaultKVName = kv.NIXL
 
 func kvConnectorName() string {
 	if v := os.Getenv("ENCODE_E2E_KV"); v != "" {

@@ -73,7 +73,7 @@ func (s *DecodeStep) Execute(ctx context.Context, reqCtx *pipeline.RequestContex
 		return fmt.Errorf("decode: creating request: %w", err)
 	}
 	proxyReq.ContentLength = int64(len(bodyBytes))
-	proxyReq.Header.Set("Content-Type", "application/json")
+	proxyReq.Header.Set(gateway.ContentTypeHeader, gateway.ContentTypeJSON)
 	for k, v := range reqCtx.ForwardedHeaders() {
 		proxyReq.Header.Set(k, v)
 	}
@@ -104,7 +104,9 @@ func (s *DecodeStep) prepareDecodeBody(reqCtx *pipeline.RequestContext) {
 	case gateway.FormatChatCompletions:
 		s.injectTokensField(reqCtx)
 	case gateway.FormatCompletions:
-		reqCtx.Body["prompt"] = reqCtx.TokenIDs
+		if len(reqCtx.TokenIDs) > 0 {
+			reqCtx.Body["prompt"] = reqCtx.TokenIDs
+		}
 	}
 }
 

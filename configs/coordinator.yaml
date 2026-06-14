@@ -59,16 +59,16 @@ gateway:
 pipeline:
   # kv_connector picks the protocol used to coordinate KV-cache transfer
   # between prefill and decode pods.
-  #   nixlv2          - NIXL v2 P2P RDMA (default)
-  #   shared_storage  - shared filesystem / object store
-  #   sglang          - SGLang-style KV bootstrap
-  kv_connector: nixlv2
+  #   kv-nixl           - NIXL P2P RDMA
+  #   kv-shared-storage - shared filesystem / object store (default)
+  #   kv-sglang         - SGLang-style KV bootstrap
+  kv_connector: kv-shared-storage
 
   # ec_connector picks the protocol used to ship encoded multimodal embedding
   # tensors from encoder pods to prefill pods.
-  #   nixlv2          - NIXL v2 P2P RDMA
-  #   shared_storage  - shared filesystem (default for non-RDMA clusters)
-  ec_connector: nixlv2
+  #   ec-nixl           - NIXL P2P RDMA
+  #   ec-shared-storage - shared filesystem (default for non-RDMA clusters)
+  ec_connector: ec-shared-storage
 
   steps:
     # -------------------------------------------------------------------
@@ -148,7 +148,7 @@ pipeline:
 
         # ec_connector overrides pipeline.ec_connector for this step only.
         # Rarely needed.
-        # ec_connector: nixlv2
+        # ec_connector: ec-nixl
 
     # -------------------------------------------------------------------
     # prefill: forwards the request (now annotated with EC and KV hints)
@@ -157,8 +157,8 @@ pipeline:
     - type: prefill
       # params:
       #   use_openai_format: true   # see notes above
-      #   ec_connector: nixlv2      # overrides pipeline.ec_connector
-      #   kv_connector: nixlv2      # overrides pipeline.kv_connector
+      #   ec_connector: ec-nixl     # overrides pipeline.ec_connector
+      #   kv_connector: kv-nixl     # overrides pipeline.kv_connector
 
     # -------------------------------------------------------------------
     # decode: streams the completion back to the client. Last step.
@@ -166,4 +166,4 @@ pipeline:
     - type: decode
       # params:
       #   use_openai_format: true   # see notes above
-      #   kv_connector: nixlv2      # overrides pipeline.kv_connector
+      #   kv_connector: kv-nixl     # overrides pipeline.kv_connector
