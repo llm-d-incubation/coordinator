@@ -177,6 +177,27 @@ func TestNIXL_MergeEncodeResponse_NilInnerValue(t *testing.T) {
 	}
 }
 
+// TestNIXL_PreparePrefillECParams_NonMapDescriptor pins copyDescriptor's
+// non-map fallthrough: the descriptor is opaque, so a non-nil scalar value
+// (not a map[string]any) carries no aliasing risk and must pass through to the
+// prefill params unchanged rather than being dropped or mangled.
+func TestNIXL_PreparePrefillECParams_NonMapDescriptor(t *testing.T) {
+	c, err := Build(NIXL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reqCtx := &pipeline.RequestContext{}
+	c.MergeEncodeResponse(reqCtx, map[string]any{"hash-x": "opaque-scalar"})
+
+	got, err := c.PreparePrefillECParams(reqCtx)
+	if err != nil {
+		t.Fatalf("PreparePrefillECParams: %v", err)
+	}
+	if got["hash-x"] != "opaque-scalar" {
+		t.Errorf("non-map descriptor should pass through unchanged, got %v", got["hash-x"])
+	}
+}
+
 // TestNIXL_PreparePrefillECParams_DefensiveCopy verifies that the returned
 // ec_transfer_params is independent of reqCtx.ECTransferParams: mutating a
 // returned descriptor must not leak back into the request context.

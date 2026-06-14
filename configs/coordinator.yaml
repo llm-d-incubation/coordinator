@@ -70,7 +70,6 @@ pipeline:
   #   ec-shared-storage - shared filesystem (default for non-RDMA clusters)
   ec_connector: ec-shared-storage
 
-
   steps:
     # -------------------------------------------------------------------
     # replace-media-urls: first step. Downloads any http(s) image_url

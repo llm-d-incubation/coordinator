@@ -10,7 +10,7 @@
 //
 //	ENCODE_E2E_GATEWAY  base URL of the gateway (default http://localhost:8080)
 //	ENCODE_E2E_MODEL    model name to send in the request body (default Qwen/Qwen3-VL-2B-Instruct)
-//	ENCODE_E2E_EC       EC connector to use (default nixl)
+//	ENCODE_E2E_EC       EC connector to use (default ec-nixl)
 //	RENDER_E2E_URL      base URL of the rendering service for chained tests (default http://localhost:8000)
 //
 // Each test exercises both encoder endpoints:

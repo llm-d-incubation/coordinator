@@ -422,6 +422,51 @@ func TestSharedStorage_OmitsECTransferParams_InPrefillBody(t *testing.T) {
 	}
 }
 
+// TestPrefillStep_ConflictingECParams_RejectsRequest verifies the load-bearing
+// "reject the request" contract end to end: when two encode responses carry
+// conflicting descriptors for the same mm_hash, PrefillStep.Execute must fail
+// and never reach the gateway. The unit-level conflict test
+// (TestNIXL_MergeAndPrepare_DuplicateHashes_Conflict) covers the connector in
+// isolation; this confirms the error propagates through the step boundary.
+func TestPrefillStep_ConflictingECParams_RejectsRequest(t *testing.T) {
+	gatewayHit := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gatewayHit = true
+		_ = json.NewEncoder(w).Encode(map[string]any{"kv_transfer_params": map[string]any{}})
+	}))
+	defer server.Close()
+
+	step, err := NewPrefillStep(map[string]any{
+		"use_openai_format": false,
+		ParamECConnector:    ec.NIXL,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	step.(*PrefillStep).SetGatewayClient(gateway.New(config.GatewayConfig{Address: server.URL}))
+
+	reqCtx := &pipeline.RequestContext{
+		RequestID: "req-conflict",
+		Model:     "test-model",
+		TokenIDs:  []int{1, 2345},
+		MultimodalEntries: []pipeline.MultimodalEntry{
+			{Index: 0, Hash: "hash-a", Placeholder: pipeline.PlaceholderRange{Offset: 1, Length: 1}},
+		},
+		ECTransferParams: []map[string]any{
+			{"hash-a": map[string]any{"peer_port": 5501}},
+			{"hash-a": map[string]any{"peer_port": 5599}},
+		},
+		KVTransferParams: make(map[string]any),
+	}
+
+	if err := step.Execute(context.Background(), reqCtx); err == nil {
+		t.Fatal("expected Execute to fail on conflicting ec_transfer_params descriptors")
+	}
+	if gatewayHit {
+		t.Error("conflicting descriptors must reject the request before contacting the gateway")
+	}
+}
+
 func TestPrefillStep_GatewayError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)

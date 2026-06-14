@@ -21,9 +21,11 @@ var logger = ctrl.Log.WithName("ec")
 // transferred from encoder pods to the prefill consumer pod. Two flavors:
 //
 //   - ec-nixl: encoder pods register embeddings in NIXL-mapped memory and
-//     return {mm_hash: {peer_host, peer_port, size_bytes, nixl_agent_metadata_b64}} per
-//     encoded image. The coordinator merges these by mm_hash and forwards them
-//     to the prefill request as ec_transfer_params.
+//     return {mm_hash: descriptor} per encoded image, where descriptor is an
+//     opaque per-encoding map (fields such as peer_host, peer_port, size_bytes,
+//     and nixl_agent_metadata_b64; the set varies by encoder). The coordinator
+//     merges these by mm_hash and forwards them to the prefill request as
+//     ec_transfer_params.
 //   - ec-shared-storage: encoder pods write embeddings to shared storage keyed
 //     by mm_hash. The consumer reads them back; no ec_transfer_params needed
 //     on the wire.
