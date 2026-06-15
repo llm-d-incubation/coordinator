@@ -116,7 +116,7 @@ func (s *PrefillStep) Execute(ctx context.Context, reqCtx *pipeline.RequestConte
 		return fmt.Errorf("prefill: decode response: %w", err)
 	}
 
-	reqCtx.KVTransferParams = kvParamsFromResponse(logger, prefillResp.KVTransferParams, reqCtx.RequestID)
+	reqCtx.KVTransferParams = kvParamsFromResponse(logger, prefillResp.KVTransferParams)
 
 	logger.V(logutil.DEFAULT).Info("complete")
 	return nil
@@ -214,7 +214,7 @@ type prefillResponse struct {
 // logged at debug and skipped (returns nil) rather than failing the request.
 // A missing or null value is already nil; an empty map passes through so the
 // connector's own no-metadata handling applies.
-func kvParamsFromResponse(logger logr.Logger, v any, requestID string) map[string]any {
+func kvParamsFromResponse(logger logr.Logger, v any) map[string]any {
 	switch m := v.(type) {
 	case nil:
 		return nil
@@ -222,7 +222,7 @@ func kvParamsFromResponse(logger logr.Logger, v any, requestID string) map[strin
 		return m
 	default:
 		logger.V(logutil.DEBUG).Info("kv_transfer_params is not a JSON object; skipping",
-			reqcommon.RequestIDHeaderKey, requestID, "type", fmt.Sprintf("%T", v))
+			"type", fmt.Sprintf("%T", v))
 		return nil
 	}
 }

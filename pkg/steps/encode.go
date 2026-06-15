@@ -121,7 +121,7 @@ func (s *EncodeStep) Execute(ctx context.Context, reqCtx *pipeline.RequestContex
 				return err
 			}
 
-			results[i] = ecParamsFromResponse(logger, encResp.ECTransferParams, i, reqCtx.RequestID)
+			results[i] = ecParamsFromResponse(logger, encResp.ECTransferParams, i)
 			return nil
 		})
 	}
@@ -249,7 +249,7 @@ type encodeResponse struct {
 // is logged at debug and skipped (returns nil) rather than failing the
 // request. A missing value is already nil; empty maps pass through so the
 // connector's own no-metadata handling applies.
-func ecParamsFromResponse(logger logr.Logger, v any, idx int, requestID string) map[string]any {
+func ecParamsFromResponse(logger logr.Logger, v any, idx int) map[string]any {
 	switch m := v.(type) {
 	case nil:
 		return nil
@@ -257,7 +257,7 @@ func ecParamsFromResponse(logger logr.Logger, v any, idx int, requestID string) 
 		return m
 	default:
 		logger.V(logutil.DEBUG).Info("ec_transfer_params is not a JSON object; skipping",
-			"index", idx, reqcommon.RequestIDHeaderKey, requestID, "type", fmt.Sprintf("%T", v))
+			"index", idx, "type", fmt.Sprintf("%T", v))
 		return nil
 	}
 }
