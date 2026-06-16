@@ -9,6 +9,11 @@ import (
 
 const redactedValue = "[REDACTED]"
 
+// maxValueLen caps a logged header value. Longer values are truncated so a
+// verbose header (e.g. X-Envoy-Peer-Metadata, a base64 proto blob) does not
+// dominate the log line.
+const maxValueLen = 256
+
 var sensitiveHeaders = map[string]struct{}{
 	"Authorization":       {},
 	"Proxy-Authorization": {},
@@ -23,6 +28,13 @@ func isSensitiveHeader(name string) bool {
 	return ok
 }
 
+func truncate(v string) string {
+	if len(v) > maxValueLen {
+		return v[:maxValueLen] + "...[truncated]"
+	}
+	return v
+}
+
 // RedactedHeaders returns a flattened copy of h with values of sensitive
 // headers replaced by a redaction sentinel. It accepts either http.Header
 // (map[string][]string) or map[string]string and always returns the flat
@@ -30,7 +42,7 @@ func isSensitiveHeader(name string) bool {
 // regardless of how the input was canonicalized. A multi-valued header keeps
 // only its first value. A header with no value (an empty slice or an empty
 // string) retains its key with an empty-string value, so both input forms
-// behave the same.
+// behave the same. Values longer than maxValueLen are truncated.
 func RedactedHeaders[V string | []string](h map[string]V) map[string]string {
 	out := make(map[string]string, len(h))
 	for k, v := range h {
@@ -41,13 +53,13 @@ func RedactedHeaders[V string | []string](h map[string]V) map[string]string {
 		}
 		switch val := any(v).(type) {
 		case string:
-			out[lower] = val
+			out[lower] = truncate(val)
 		case []string:
 			first := ""
 			if len(val) > 0 {
 				first = val[0]
 			}
-			out[lower] = first
+			out[lower] = truncate(first)
 		}
 	}
 	return out
