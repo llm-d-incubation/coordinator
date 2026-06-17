@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/go-logr/logr"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	logutil "github.com/llm-d/llm-d-router/pkg/common/observability/logging"
@@ -33,10 +32,7 @@ type EncodeStep struct {
 }
 
 func NewEncodeStep(params map[string]any) (pipeline.Step, error) {
-	useOpenAI := true
-	if v, ok := params["use_openai_format"].(bool); ok {
-		useOpenAI = v
-	}
+	useOpenAI := parseUseOpenAIFormat(params)
 	maxParallel := 8
 	if v, ok := params["max_parallel"].(int); ok {
 		if v <= 0 {
@@ -78,7 +74,7 @@ func (s *EncodeStep) Execute(ctx context.Context, reqCtx *pipeline.RequestContex
 		g.Go(func() error {
 			tokenIDs := s.buildEncodeTokenIDs(reqCtx.TokenIDs, entry)
 
-			format := s.resolveFormat(reqCtx)
+			format := resolveFormat(s.useOpenAIFormat, reqCtx.OriginalPath)
 			body := s.buildEncodeBody(reqCtx, tokenIDs, entry, format)
 
 			bodyBytes, err := json.Marshal(body)
@@ -121,7 +117,7 @@ func (s *EncodeStep) Execute(ctx context.Context, reqCtx *pipeline.RequestContex
 				return err
 			}
 
-			results[i] = ecParamsFromResponse(logger, encResp.ECTransferParams, i)
+			results[i] = coerceParamsMap(logger.WithValues("index", i), encResp.ECTransferParams, "ec_transfer_params")
 			return nil
 		})
 	}
@@ -154,17 +150,6 @@ func (s *EncodeStep) buildEncodeTokenIDs(fullTokenIDs []int, entry pipeline.Mult
 		tokenIDs[j] = placeholderTokenID
 	}
 	return tokenIDs
-}
-
-func (s *EncodeStep) resolveFormat(reqCtx *pipeline.RequestContext) gateway.RequestFormat {
-	detected := gateway.DetectFormat(reqCtx.OriginalPath)
-	if detected == gateway.FormatCompletions {
-		return gateway.FormatCompletions
-	}
-	if !s.useOpenAIFormat {
-		return gateway.FormatGenerate
-	}
-	return detected
 }
 
 func (s *EncodeStep) buildEncodeBody(reqCtx *pipeline.RequestContext, tokenIDs []int, entry pipeline.MultimodalEntry, format gateway.RequestFormat) map[string]any {
@@ -240,24 +225,6 @@ func (s *EncodeStep) buildSingleImageContent(reqCtx *pipeline.RequestContext, en
 
 type encodeResponse struct {
 	// ECTransferParams is decoded as any (not map[string]any) so a non-object
-	// value does not fail the decode; ecParamsFromResponse coerces it.
+	// value does not fail the decode; coerceParamsMap coerces it.
 	ECTransferParams any `json:"ec_transfer_params"`
-}
-
-// ecParamsFromResponse coerces the ec_transfer_params value from an encoder
-// response to a map, mirroring the sidecar EC-NIXL proxy: a non-object value
-// is logged at debug and skipped (returns nil) rather than failing the
-// request. A missing value is already nil; empty maps pass through so the
-// connector's own no-metadata handling applies.
-func ecParamsFromResponse(logger logr.Logger, v any, idx int) map[string]any {
-	switch m := v.(type) {
-	case nil:
-		return nil
-	case map[string]any:
-		return m
-	default:
-		logger.V(logutil.DEBUG).Info("ec_transfer_params is not a JSON object; skipping",
-			"index", idx, "type", fmt.Sprintf("%T", v))
-		return nil
-	}
 }

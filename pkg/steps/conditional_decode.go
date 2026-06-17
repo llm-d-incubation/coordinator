@@ -34,13 +34,7 @@ type ConditionalDecodeStep struct {
 }
 
 func NewConditionalDecodeStep(params map[string]any) (pipeline.Step, error) {
-	useOpenAI := true
-	if params != nil {
-		if v, ok := params["use_openai_format"].(bool); ok {
-			useOpenAI = v
-		}
-	}
-	return &ConditionalDecodeStep{useOpenAIFormat: useOpenAI}, nil
+	return &ConditionalDecodeStep{useOpenAIFormat: parseUseOpenAIFormat(params)}, nil
 }
 
 func (s *ConditionalDecodeStep) SetGatewayClient(c *gateway.Client) {
@@ -115,27 +109,15 @@ func (s *ConditionalDecodeStep) Execute(ctx context.Context, reqCtx *pipeline.Re
 }
 
 func (s *ConditionalDecodeStep) prepareBody(reqCtx *pipeline.RequestContext, body map[string]any) {
-	format := s.resolveFormat(reqCtx)
+	format := resolveFormat(s.useOpenAIFormat, reqCtx.OriginalPath)
 	switch format {
 	case gateway.FormatChatCompletions:
 		if len(reqCtx.TokenIDs) > 0 {
 			tokens := map[string]any{
 				"token_ids": reqCtx.TokenIDs,
 			}
-			if len(reqCtx.MultimodalEntries) > 0 {
-				allHashes := make([]string, len(reqCtx.MultimodalEntries))
-				allPlaceholders := make([]any, len(reqCtx.MultimodalEntries))
-				for i, entry := range reqCtx.MultimodalEntries {
-					allHashes[i] = entry.Hash
-					allPlaceholders[i] = map[string]any{
-						"offset": entry.Placeholder.Offset,
-						"length": entry.Placeholder.Length,
-					}
-				}
-				tokens["features"] = map[string]any{
-					"mm_hashes":       map[string][]string{ModalityImage: allHashes},
-					"mm_placeholders": map[string][]any{ModalityImage: allPlaceholders},
-				}
+			if features := buildMMFeatures(reqCtx.MultimodalEntries, false); features != nil {
+				tokens["features"] = features
 			}
 			body["tokens"] = tokens
 		}
@@ -144,15 +126,4 @@ func (s *ConditionalDecodeStep) prepareBody(reqCtx *pipeline.RequestContext, bod
 			body["prompt"] = reqCtx.TokenIDs
 		}
 	}
-}
-
-func (s *ConditionalDecodeStep) resolveFormat(reqCtx *pipeline.RequestContext) gateway.RequestFormat {
-	detected := gateway.DetectFormat(reqCtx.OriginalPath)
-	if detected == gateway.FormatCompletions {
-		return gateway.FormatCompletions
-	}
-	if !s.useOpenAIFormat {
-		return gateway.FormatGenerate
-	}
-	return detected
 }

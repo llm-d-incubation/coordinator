@@ -33,10 +33,7 @@ type DecodeStep struct {
 }
 
 func NewDecodeStep(params map[string]any) (pipeline.Step, error) {
-	useOpenAI := true
-	if v, ok := params["use_openai_format"].(bool); ok {
-		useOpenAI = v
-	}
+	useOpenAI := parseUseOpenAIFormat(params)
 	kvName, _ := params[ParamKVConnector].(string)
 	kvConn, err := kv.Build(kvName)
 	if err != nil {
@@ -100,7 +97,7 @@ func (s *DecodeStep) prepareDecodeBody(ctx context.Context, reqCtx *pipeline.Req
 	reqCtx.Body["kv_transfer_params"] = s.kv.PrepareDecodeKVParams(ctx, reqCtx)
 	s.injectUUIDs(reqCtx)
 
-	format := s.resolveFormat(reqCtx)
+	format := resolveFormat(s.useOpenAIFormat, reqCtx.OriginalPath)
 	switch format {
 	case gateway.FormatChatCompletions:
 		s.injectTokensField(reqCtx)
@@ -111,35 +108,12 @@ func (s *DecodeStep) prepareDecodeBody(ctx context.Context, reqCtx *pipeline.Req
 	}
 }
 
-func (s *DecodeStep) resolveFormat(reqCtx *pipeline.RequestContext) gateway.RequestFormat {
-	detected := gateway.DetectFormat(reqCtx.OriginalPath)
-	if detected == gateway.FormatCompletions {
-		return gateway.FormatCompletions
-	}
-	if !s.useOpenAIFormat {
-		return gateway.FormatGenerate
-	}
-	return detected
-}
-
 func (s *DecodeStep) injectTokensField(reqCtx *pipeline.RequestContext) {
 	tokens := map[string]any{
 		"token_ids": reqCtx.TokenIDs,
 	}
-	if len(reqCtx.MultimodalEntries) > 0 {
-		allHashes := make([]string, len(reqCtx.MultimodalEntries))
-		allPlaceholders := make([]any, len(reqCtx.MultimodalEntries))
-		for i, entry := range reqCtx.MultimodalEntries {
-			allHashes[i] = entry.Hash
-			allPlaceholders[i] = map[string]any{
-				"offset": entry.Placeholder.Offset,
-				"length": entry.Placeholder.Length,
-			}
-		}
-		tokens["features"] = map[string]any{
-			"mm_hashes":       map[string][]string{ModalityImage: allHashes},
-			"mm_placeholders": map[string][]any{ModalityImage: allPlaceholders},
-		}
+	if features := buildMMFeatures(reqCtx.MultimodalEntries, false); features != nil {
+		tokens["features"] = features
 	}
 	reqCtx.Body["tokens"] = tokens
 }

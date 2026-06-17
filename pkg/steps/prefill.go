@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/go-logr/logr"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	logutil "github.com/llm-d/llm-d-router/pkg/common/observability/logging"
@@ -33,10 +32,7 @@ type PrefillStep struct {
 }
 
 func NewPrefillStep(params map[string]any) (pipeline.Step, error) {
-	useOpenAI := true
-	if v, ok := params["use_openai_format"].(bool); ok {
-		useOpenAI = v
-	}
+	useOpenAI := parseUseOpenAIFormat(params)
 	kvName, _ := params[ParamKVConnector].(string)
 	kvConn, err := kv.Build(kvName)
 	if err != nil {
@@ -59,28 +55,9 @@ func (s *PrefillStep) Name() string { return PrefillStepName }
 func (s *PrefillStep) Execute(ctx context.Context, reqCtx *pipeline.RequestContext) error {
 	logger := log.FromContext(ctx).WithName(PrefillStepName)
 
-	allHashes := make([]string, len(reqCtx.MultimodalEntries))
-	allPlaceholders := make([]any, len(reqCtx.MultimodalEntries))
-	allKwargsData := make([]string, len(reqCtx.MultimodalEntries))
-	for i, entry := range reqCtx.MultimodalEntries {
-		allHashes[i] = entry.Hash
-		allPlaceholders[i] = map[string]any{
-			"offset": entry.Placeholder.Offset,
-			"length": entry.Placeholder.Length,
-		}
-		allKwargsData[i] = entry.KwargsData
-	}
+	features := buildMMFeatures(reqCtx.MultimodalEntries, true)
 
-	var features map[string]any
-	if len(reqCtx.MultimodalEntries) > 0 {
-		features = map[string]any{
-			"mm_hashes":       map[string][]string{ModalityImage: allHashes},
-			"mm_placeholders": map[string][]any{ModalityImage: allPlaceholders},
-			"kwargs_data":     map[string][]string{ModalityImage: allKwargsData},
-		}
-	}
-
-	format := s.resolveFormat(reqCtx)
+	format := resolveFormat(s.useOpenAIFormat, reqCtx.OriginalPath)
 	body, err := s.buildPrefillBody(ctx, reqCtx, features, format)
 	if err != nil {
 		return fmt.Errorf("prefill: %w", err)
@@ -116,21 +93,10 @@ func (s *PrefillStep) Execute(ctx context.Context, reqCtx *pipeline.RequestConte
 		return fmt.Errorf("prefill: decode response: %w", err)
 	}
 
-	reqCtx.KVTransferParams = kvParamsFromResponse(logger, prefillResp.KVTransferParams)
+	reqCtx.KVTransferParams = coerceParamsMap(logger, prefillResp.KVTransferParams, "kv_transfer_params")
 
 	logger.V(logutil.DEFAULT).Info("complete")
 	return nil
-}
-
-func (s *PrefillStep) resolveFormat(reqCtx *pipeline.RequestContext) gateway.RequestFormat {
-	detected := gateway.DetectFormat(reqCtx.OriginalPath)
-	if detected == gateway.FormatCompletions {
-		return gateway.FormatCompletions
-	}
-	if !s.useOpenAIFormat {
-		return gateway.FormatGenerate
-	}
-	return detected
 }
 
 func (s *PrefillStep) buildPrefillBody(ctx context.Context, reqCtx *pipeline.RequestContext, features map[string]any, format gateway.RequestFormat) (map[string]any, error) {
@@ -205,24 +171,6 @@ func (s *PrefillStep) buildPrefillBody(ctx context.Context, reqCtx *pipeline.Req
 
 type prefillResponse struct {
 	// KVTransferParams is decoded as any (not map[string]any) so a non-object
-	// value does not fail the decode; kvParamsFromResponse coerces it.
+	// value does not fail the decode; coerceParamsMap coerces it.
 	KVTransferParams any `json:"kv_transfer_params"`
-}
-
-// kvParamsFromResponse coerces the kv_transfer_params value from a prefill
-// response to a map, mirroring ecParamsFromResponse: a non-object value is
-// logged at debug and skipped (returns nil) rather than failing the request.
-// A missing or null value is already nil; an empty map passes through so the
-// connector's own no-metadata handling applies.
-func kvParamsFromResponse(logger logr.Logger, v any) map[string]any {
-	switch m := v.(type) {
-	case nil:
-		return nil
-	case map[string]any:
-		return m
-	default:
-		logger.V(logutil.DEBUG).Info("kv_transfer_params is not a JSON object; skipping",
-			"type", fmt.Sprintf("%T", v))
-		return nil
-	}
 }
