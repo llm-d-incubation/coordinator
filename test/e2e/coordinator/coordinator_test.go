@@ -66,14 +66,41 @@ var _ = ginkgo.Describe("Coordinator pipeline", func() {
 			modelName, testImageURL, testImageURL2,
 		)), allSteps, 2)
 	})
+
+	ginkgo.It("routes a multimodal chat completion with an inline base64 image end-to-end", func() {
+		runCoordinatorPipeline([]byte(fmt.Sprintf(
+			`{"model":%q,"messages":[{"role":"user","content":[{"type":"image_url","image_url":{"url":%q},"uuid":"image-0"},{"type":"text","text":"Describe what you see."}]}],"max_tokens":150}`,
+			modelName, inlineImageDataURI,
+		)), allSteps, 1)
+	})
+
+	ginkgo.It("routes a multimodal chat completion with one inline and one remote image end-to-end", func() {
+		runCoordinatorPipeline([]byte(fmt.Sprintf(
+			`{"model":%q,"messages":[{"role":"user","content":[{"type":"image_url","image_url":{"url":%q},"uuid":"image-0"},{"type":"image_url","image_url":{"url":%q},"uuid":"image-1"},{"type":"text","text":"Describe what you see in both images."}]}],"max_tokens":150}`,
+			modelName, inlineImageDataURI, testImageURL,
+		)), allSteps, 2)
+	})
+
 })
 
-// runCoordinatorPipeline deploys the e-p-d topology and coordinator, posts the
-// given chat-completion body, asserts a 200 with a non-empty body, verifies
-// that the coordinator logs show all expected pipeline steps completed, then
-// tears the workload down. expectedImages is the number of images in the
-// request; when > 0 the encoder ec_transfer_params count is also verified.
+// inlineImageDataURI is a 64x64 solid-color PNG encoded as a base64 data URI.
+// It exercises the inline data: branch of replace-media-urls, which the
+// remote-URL specs never reach, while still flowing through encode/prefill/decode.
+const inlineImageDataURI = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAaUlEQVR4nOzPUQkAIRQAweMwx+sfxViG8GMQdhLsrj3zvezXAbca0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0E4AAAD//9Q1AYfjlntsAAAAAElFTkSuQmCC"
+
+// runCoordinatorPipeline posts the given chat-completion body and asserts a 200
+// happy path: see runCoordinatorRequest.
 func runCoordinatorPipeline(body []byte, expectedSteps []string, expectedImages int) {
+	runCoordinatorRequest(body, http.StatusOK, expectedSteps, expectedImages)
+}
+
+// runCoordinatorRequest deploys the e-p-d topology and coordinator, posts the
+// given chat-completion body, asserts the response status equals expectedStatus,
+// then tears the workload down. On a 200 it additionally asserts a non-empty
+// body and verifies that the coordinator logs show all expected pipeline steps
+// completed. expectedImages is the number of images in the request; when > 0 the
+// encoder ec_transfer_params count is also verified.
+func runCoordinatorRequest(body []byte, expectedStatus int, expectedSteps []string, expectedImages int) {
 	var (
 		coordinator  []string
 		modelServers []string
@@ -155,18 +182,36 @@ func runCoordinatorPipeline(body []byte, expectedSteps []string, expectedImages 
 	raw, err := io.ReadAll(resp.Body)
 	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 
-	gomega.Expect(resp.StatusCode).To(gomega.Equal(http.StatusOK),
-		"coordinator returned non-200: body=%s", string(raw))
-	gomega.Expect(raw).NotTo(gomega.BeEmpty(), "coordinator returned empty body")
+	gomega.Expect(resp.StatusCode).To(gomega.Equal(expectedStatus),
+		"coordinator returned unexpected status: body=%s", string(raw))
 
-	verifyCoordinatorSteps(expectedSteps, expectedImages)
+	if expectedStatus != http.StatusOK {
+		return
+	}
+
+	gomega.Expect(raw).NotTo(gomega.BeEmpty(), "coordinator returned empty body")
+	verifyCoordinatorSteps(expectedSteps, expectedImages,
+		configSelectsConnector(coordinatorConfigNIXL, "kv_connector", "kv-nixl"),
+		configSelectsConnector(coordinatorConfigNIXL, "ec_connector", "ec-nixl"))
+}
+
+// configSelectsConnector reports whether the coordinator config selects the
+// named pipeline connector (e.g. field "kv_connector", connector "kv-nixl").
+// Only the NIXL kv/ec connectors emit kv_transfer_params / ec_transfer_params
+// into the coordinator logs, so those assertions are gated on the deployed
+// config selecting them.
+func configSelectsConnector(config, field, connector string) bool {
+	return strings.Contains(config, field+": "+connector)
 }
 
 // verifyCoordinatorSteps fetches the coordinator pod logs and asserts that
-// every expected step has a "step complete" log entry. When expectedImages > 0,
-// it also verifies that the encode step reported the correct number of
-// ec_transfer_params entries via the "merged encode response" total.
-func verifyCoordinatorSteps(expectedSteps []string, expectedImages int) {
+// every expected step has a "step complete" log entry. When kvNIXL is set it
+// also asserts kv_transfer_params on the prefill and decode legs, and when
+// expectedImages > 0 it asserts the encode step completed all image
+// sub-requests, plus, when ecNIXL is set, the ec_transfer_params total via the
+// "merged encode response" marker. The kv/ec params surface in the logs only
+// for the NIXL connectors, so those checks are gated accordingly.
+func verifyCoordinatorSteps(expectedSteps []string, expectedImages int, kvNIXL, ecNIXL bool) {
 	ginkgo.By("Verifying coordinator logs contain all pipeline steps")
 
 	args := []string{"logs", "deployment/llm-d-coordinator",
@@ -196,37 +241,57 @@ func verifyCoordinatorSteps(expectedSteps []string, expectedImages int) {
 			"coordinator logs have no 'step complete' entry for step %q", step)
 	}
 
-	if expectedImages > 0 {
-		ginkgo.By("Verifying encode returned ec_transfer_params for all images")
-		// The encoder logs "merged encode response","total":<N> as it
-		// accumulates ec_transfer_params from each sub-request, and
-		// "all sub-requests complete","count":<N> when done. Match msg and the
-		// count field independently per line: structured-log fields such as
-		// x-request-id sit between them, so a contiguous substring would miss.
-		mergedMarker := `"msg":"merged encode response"`
-		totalField := fmt.Sprintf(`"total":%d`, expectedImages)
-		merged := false
-		for _, line := range strings.Split(logs, "\n") {
-			if strings.Contains(line, mergedMarker) &&
-				strings.Contains(line, totalField) {
-				merged = true
-				break
-			}
-		}
-		gomega.Expect(merged).To(gomega.BeTrue(),
-			"coordinator logs missing merged encode response with total=%d", expectedImages)
+	if kvNIXL {
+		// kv_transfer_params surfaces on two legs of the NIXL handshake.
+		// Prefill: the prefill server returns kv_transfer_params in its response
+		// body; the gateway client logs this at trace under "response body".
+		// Decode: the request goes out via a reverse proxy the gateway client
+		// never sees, so the kv connector's "preparing decode kv params" trace,
+		// which always sets do_remote_prefill=true, is where the decode leg surfaces.
+		ginkgo.By("Verifying kv_transfer_params in the prefill response")
+		gomega.Expect(logHasLine(logs, `"msg":"response body"`, `"kv_transfer_params"`)).To(gomega.BeTrue(),
+			"coordinator logs have no prefill response body carrying kv_transfer_params")
 
-		countMarker := `"msg":"all sub-requests complete"`
-		countField := fmt.Sprintf(`"count":%d`, expectedImages)
-		found := false
-		for _, line := range strings.Split(logs, "\n") {
-			if strings.Contains(line, countMarker) &&
-				strings.Contains(line, countField) {
-				found = true
+		ginkgo.By("Verifying kv_transfer_params on the decode leg")
+		gomega.Expect(logHasLine(logs, `"msg":"preparing decode kv params"`, `"do_remote_prefill":true`)).To(gomega.BeTrue(),
+			"coordinator logs have no decode kv_transfer_params with do_remote_prefill=true")
+	}
+
+	if expectedImages > 0 {
+		// The encode step fans out one sub-request per image; this marker is
+		// logged by the step itself, so it holds for any ec connector.
+		ginkgo.By("Verifying encode completed all image sub-requests")
+		gomega.Expect(logHasLine(logs, `"msg":"all sub-requests complete"`, fmt.Sprintf(`"count":%d`, expectedImages))).To(gomega.BeTrue(),
+			"coordinator logs missing 'all sub-requests complete' with count=%d", expectedImages)
+
+		if ecNIXL {
+			// The NIXL ec connector merges one ec_transfer_params entry per image
+			// ("merged encode response","total":N), then the merged set is carried
+			// on the prefill request body.
+			ginkgo.By("Verifying ec_transfer_params merged for all images")
+			gomega.Expect(logHasLine(logs, `"msg":"merged encode response"`, fmt.Sprintf(`"total":%d`, expectedImages))).To(gomega.BeTrue(),
+				"coordinator logs missing merged encode response with total=%d", expectedImages)
+
+			ginkgo.By("Verifying ec_transfer_params forwarded on the prefill request")
+			gomega.Expect(logHasLine(logs, `"msg":"request body"`, `"epp-phase":"prefill"`, `"ec_transfer_params"`)).To(gomega.BeTrue(),
+				"coordinator logs have no prefill request body carrying ec_transfer_params")
+		}
+	}
+}
+
+// logHasLine reports whether any single line in logs contains all of substrs.
+func logHasLine(logs string, substrs ...string) bool {
+	for _, line := range strings.Split(logs, "\n") {
+		matched := true
+		for _, s := range substrs {
+			if !strings.Contains(line, s) {
+				matched = false
 				break
 			}
 		}
-		gomega.Expect(found).To(gomega.BeTrue(),
-			"coordinator logs missing 'all sub-requests complete' with count=%d", expectedImages)
+		if matched {
+			return true
+		}
 	}
+	return false
 }
