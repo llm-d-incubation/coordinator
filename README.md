@@ -159,10 +159,10 @@ func (s *MyStep) Name() string { return "my-step" }
 func (s *MyStep) Execute(ctx context.Context, reqCtx *pipeline.RequestContext) error {
     // Access and modify the request context:
     // - reqCtx.Body              (parsed JSON body, mutable)
+    // - reqCtx.TokenIDs          (token IDs from the render step)
     // - reqCtx.MultimodalEntries (multimodal content)
-    // - reqCtx.ECTransferParams  (encoder cache transfer params)
+    // - reqCtx.ECTransferParams  (encoder cache transfer params, per encode response)
     // - reqCtx.KVTransferParams  (KV cache transfer params)
-    // - reqCtx.MMHashes          (multimodal content hashes)
     // - reqCtx.Model             (model name)
     // - reqCtx.Stream            (whether client requested streaming)
     //
@@ -212,18 +212,19 @@ The `RequestContext` is the shared state passed between steps:
 
 ```go
 type RequestContext struct {
-    RequestID         string                      // Unique request ID
-    OriginalPath      string                      // Client request path (e.g., /v1/chat/completions)
-    OriginalBody      []byte                      // Raw request body
-    Body              map[string]any              // Parsed/mutable JSON body
-    Model             string                      // Model name
-    Stream            bool                        // SSE streaming requested
-    MultimodalEntries []MultimodalEntry           // Downloaded multimodal content
-    ECTransferParams  map[string]ECTransferParam  // Encode results (mm_hash -> peer)
-    KVTransferParams  map[string]any              // Prefill results
-    MMHashes          []string                    // Multimodal content UUIDs
-    ResponseWriter    http.ResponseWriter         // Client response writer
-    Flusher           http.Flusher                // For SSE streaming
+    RequestID         string              // Unique request ID
+    OriginalPath      string              // Client request path (e.g., /v1/chat/completions)
+    OriginalHeaders   http.Header         // Inbound request headers (forwarded upstream, minus hop-by-hop)
+    OriginalBody      []byte              // Raw request body
+    Body              map[string]any      // Parsed/mutable JSON body
+    Model             string              // Model name
+    Stream            bool                // SSE streaming requested
+    TokenIDs          []int               // Token IDs from the render step
+    MultimodalEntries []MultimodalEntry   // Downloaded multimodal content
+    ECTransferParams  []map[string]any    // Encode results, one entry per encode response (mm_hash -> descriptor)
+    KVTransferParams  map[string]any      // Prefill results
+    ResponseWriter    http.ResponseWriter // Client response writer; decode steps stream the final response to it
+    StartTime         time.Time           // Request arrival time
 }
 ```
 
