@@ -45,12 +45,12 @@ func TestHandleInference_ClientErrorMapsTo400(t *testing.T) {
 	}
 }
 
-func TestHandleInference_UpstreamErrorMapsTo502(t *testing.T) {
-	// A plain step error (e.g. gateway failure) stays 502.
-	stepErr := errors.New("prefill: HTTP 503: upstream down")
+func TestHandleInference_UnclassifiedErrorMapsTo502(t *testing.T) {
+	// A plain step error (no ErrBadRequest, no UpstreamError) stays 502.
+	stepErr := errors.New("prefill: connect: connection refused")
 	rec := postInference(t, newTestServer(stepErr))
 	if rec.Code != http.StatusBadGateway {
-		t.Fatalf("expected 502 for upstream error, got %d", rec.Code)
+		t.Fatalf("expected 502 for unclassified error, got %d", rec.Code)
 	}
 }
 
