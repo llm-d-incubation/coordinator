@@ -3,6 +3,7 @@ package steps
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -272,6 +273,44 @@ func TestRenderStep_RejectsTooManyTotalTokens_CompletionsTokenArray(t *testing.T
 	}
 	if !strings.Contains(err.Error(), "too many total tokens") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	if !errors.Is(err, pipeline.ErrBadRequest) {
+		t.Fatalf("token-limit rejection should be a client error: %v", err)
+	}
+}
+
+func TestRenderStep_UpstreamErrorCarriesStatus(t *testing.T) {
+	for _, status := range []int{http.StatusBadRequest, http.StatusInternalServerError} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(status)
+		}))
+
+		step, _ := NewRenderStep(nil)
+		step.(*RenderStep).SetServiceAddress(server.URL)
+
+		reqCtx := &pipeline.RequestContext{
+			OriginalPath: gateway.PathChatCompletions,
+			Body:         map[string]any{"model": "test"},
+		}
+
+		err := step.Execute(context.Background(), reqCtx)
+		server.Close()
+		if err == nil {
+			t.Fatalf("expected error when render service returns %d", status)
+		}
+		if errors.Is(err, pipeline.ErrBadRequest) {
+			t.Fatalf("upstream failure must not be a coordinator-side bad request: %v", err)
+		}
+		var upstream *pipeline.UpstreamError
+		if !errors.As(err, &upstream) {
+			t.Fatalf("expected an UpstreamError, got %v", err)
+		}
+		if upstream.StatusCode != status {
+			t.Fatalf("expected status %d, got %d", status, upstream.StatusCode)
+		}
+		if upstream.Step != RenderStepName {
+			t.Fatalf("expected step %q, got %q", RenderStepName, upstream.Step)
+		}
 	}
 }
 

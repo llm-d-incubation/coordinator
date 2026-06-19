@@ -139,15 +139,15 @@ func (s *RenderStep) executeCompletions(ctx context.Context, reqCtx *pipeline.Re
 			logger.V(logutil.DEFAULT).Info("prompt is token array, skipping render", "token_ids_len", len(tokenIDs))
 			return nil
 		case string:
-			return errors.New("render: batched string prompts ([]string) are not supported")
+			return fmt.Errorf("render: batched string prompts ([]string) are not supported: %w", pipeline.ErrBadRequest)
 		case []any:
-			return errors.New("render: batched token prompts ([][]int) are not supported")
+			return fmt.Errorf("render: batched token prompts ([][]int) are not supported: %w", pipeline.ErrBadRequest)
 		default:
-			return fmt.Errorf("render: invalid prompt array element: %T", p[0])
+			return fmt.Errorf("render: invalid prompt array element: %T: %w", p[0], pipeline.ErrBadRequest)
 		}
 
 	default:
-		return fmt.Errorf("render: prompt must be a string or token array, got %T", prompt)
+		return fmt.Errorf("render: prompt must be a string or token array, got %T: %w", prompt, pipeline.ErrBadRequest)
 	}
 }
 
@@ -229,7 +229,7 @@ func (s *RenderStep) postRender(ctx context.Context, reqCtx *pipeline.RequestCon
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("render service returned HTTP %d: %s", resp.StatusCode, string(respBody))
+		return upstreamError(RenderStepName, resp.StatusCode, respBody)
 	}
 	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
 		return fmt.Errorf("decoding render response: %w", err)
@@ -257,7 +257,7 @@ type completionsRenderResponse struct {
 
 func (s *RenderStep) checkTokenLimit(tokenCount int) error {
 	if s.maxTotalTokens > 0 && tokenCount > s.maxTotalTokens {
-		return fmt.Errorf("too many total tokens: got %d, max %d", tokenCount, s.maxTotalTokens)
+		return fmt.Errorf("too many total tokens: got %d, max %d: %w", tokenCount, s.maxTotalTokens, pipeline.ErrBadRequest)
 	}
 	return nil
 }
@@ -271,7 +271,7 @@ func (s *RenderStep) checkPlaceholderLimit(entries []pipeline.MultimodalEntry) e
 		total += e.Placeholder.Length
 	}
 	if total > s.maxTotalPlaceholderTokens {
-		return fmt.Errorf("too many placeholder tokens: got %d, max %d", total, s.maxTotalPlaceholderTokens)
+		return fmt.Errorf("too many placeholder tokens: got %d, max %d: %w", total, s.maxTotalPlaceholderTokens, pipeline.ErrBadRequest)
 	}
 	return nil
 }
@@ -282,20 +282,20 @@ func toIntSlice(values []any) ([]int, error) {
 		switch n := v.(type) {
 		case float64:
 			if n < 0 || n != math.Trunc(n) {
-				return nil, fmt.Errorf("render: invalid token in prompt array: %v (must be a non-negative integer)", v)
+				return nil, fmt.Errorf("render: invalid token in prompt array: %v (must be a non-negative integer): %w", v, pipeline.ErrBadRequest)
 			}
 			out = append(out, int(n))
 		case json.Number:
 			i, err := n.Int64()
 			if err != nil {
-				return nil, fmt.Errorf("render: invalid token in prompt array: %v", v)
+				return nil, fmt.Errorf("render: invalid token in prompt array: %v: %w", v, pipeline.ErrBadRequest)
 			}
 			if i < 0 {
-				return nil, fmt.Errorf("render: invalid token in prompt array: %v (must be a non-negative integer)", v)
+				return nil, fmt.Errorf("render: invalid token in prompt array: %v (must be a non-negative integer): %w", v, pipeline.ErrBadRequest)
 			}
 			out = append(out, int(i))
 		default:
-			return nil, fmt.Errorf("render: invalid token in prompt array: %T", v)
+			return nil, fmt.Errorf("render: invalid token in prompt array: %T: %w", v, pipeline.ErrBadRequest)
 		}
 	}
 	return out, nil
