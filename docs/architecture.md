@@ -284,7 +284,7 @@ phase and format are in [communication.md](communication.md).
 ### Cross-phase metadata
 
 State produced by one phase and consumed by a later one is carried on the
-`RequestContext` (see [RequestContext](#requestcontext)), not by a sidecar:
+`RequestContext` (see [RequestContext](#requestcontext)):
 
 | Produced by | Field | Consumed by |
 | :---- | :---- | :---- |
