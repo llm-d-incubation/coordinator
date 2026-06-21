@@ -588,8 +588,9 @@ single step may override the default in its own `params` (`kv_connector:` /
 
 ### Should the coordinator use the tokens-in format?
 
-`gateway.use_openai_format` selects the wire format for the encode, prefill, and decode
-steps:
+`gateway.use_openai_format` selects the wire format for the encode and prefill steps
+(the steps that choose their upstream endpoint by format). Decode and conditional-decode
+always forward on the client's original OpenAI path and are unaffected by this setting:
 
 - `true` (default): forward the client's original OpenAI path (`/v1/chat/completions`,
   `/v1/completions`).
@@ -647,10 +648,10 @@ only the request carrier differs.
 | :---- | :---- | :---- |
 | `replace-media-urls` | Download `image_url` references, inline as base64 data URIs, seed `MultimodalEntries`. | `download_timeout`, `max_concurrent_downloads`, `max_multimodal_entries` |
 | `render` | Tokenize via the render service; populate `TokenIDs` and per-image hash/placeholder/kwargs. | `address` (required), `timeout`, `max_total_tokens`, `max_total_placeholder_tokens` |
-| `conditional-decode` | Optional fast path: attempt decode with `Prefer: if-available`; on 412 continue, otherwise stream the response and stop. | `use_openai_format` |
+| `conditional-decode` | Optional fast path: attempt decode with `Prefer: if-available`; on 412 continue, otherwise stream the response and stop. | (none) |
 | `encode` | Parallel fan-out, one request per multimodal entry; merge EC descriptors. | `max_parallel`, `use_openai_format`, `ec_connector` |
 | `prefill` | Single prefill call with tokens + EC/KV hints; capture `kv_transfer_params`. | `use_openai_format`, `kv_connector`, `ec_connector` |
-| `decode` | Stream the final completion to the client. | `use_openai_format`, `kv_connector` |
+| `decode` | Stream the final completion to the client. | `kv_connector` |
 
 Parameter semantics and defaults are documented inline in
 [configs/coordinator.yaml](../configs/coordinator.yaml). The wire formats each step
