@@ -88,19 +88,12 @@ var _ = ginkgo.Describe("Coordinator pipeline", func() {
 // remote-URL specs never reach, while still flowing through encode/prefill/decode.
 const inlineImageDataURI = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAaUlEQVR4nOzPUQkAIRQAweMwx+sfxViG8GMQdhLsrj3zvezXAbca0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0E4AAAD//9Q1AYfjlntsAAAAAElFTkSuQmCC"
 
-// runCoordinatorPipeline posts the given chat-completion body and asserts a 200
-// happy path: see runCoordinatorRequest.
+// runCoordinatorPipeline deploys the e-p-d topology and coordinator, posts the
+// given chat-completion body, asserts a 200 with a non-empty body, verifies
+// that the coordinator logs show all expected pipeline steps completed, then
+// tears the workload down. expectedImages is the number of images in the
+// request; when > 0 the encoder log assertions are also verified.
 func runCoordinatorPipeline(body []byte, expectedSteps []string, expectedImages int) {
-	runCoordinatorRequest(body, http.StatusOK, expectedSteps, expectedImages)
-}
-
-// runCoordinatorRequest deploys the e-p-d topology and coordinator, posts the
-// given chat-completion body, asserts the response status equals expectedStatus,
-// then tears the workload down. On a 200 it additionally asserts a non-empty
-// body and verifies that the coordinator logs show all expected pipeline steps
-// completed. expectedImages is the number of images in the request; when > 0 the
-// encoder ec_transfer_params count is also verified.
-func runCoordinatorRequest(body []byte, expectedStatus int, expectedSteps []string, expectedImages int) {
 	var (
 		coordinator  []string
 		modelServers []string
@@ -182,26 +175,10 @@ func runCoordinatorRequest(body []byte, expectedStatus int, expectedSteps []stri
 	raw, err := io.ReadAll(resp.Body)
 	gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 
-	gomega.Expect(resp.StatusCode).To(gomega.Equal(expectedStatus),
-		"coordinator returned unexpected status: body=%s", string(raw))
-
-	if expectedStatus != http.StatusOK {
-		return
-	}
-
+	gomega.Expect(resp.StatusCode).To(gomega.Equal(http.StatusOK),
+		"coordinator returned non-200: body=%s", string(raw))
 	gomega.Expect(raw).NotTo(gomega.BeEmpty(), "coordinator returned empty body")
-	verifyCoordinatorSteps(expectedSteps, expectedImages,
-		configSelectsConnector(coordinatorConfigNIXL, "kv_connector", "kv-nixl"),
-		configSelectsConnector(coordinatorConfigNIXL, "ec_connector", "ec-nixl"))
-}
-
-// configSelectsConnector reports whether the coordinator config selects the
-// named pipeline connector (e.g. field "kv_connector", connector "kv-nixl").
-// Only the NIXL kv/ec connectors emit kv_transfer_params / ec_transfer_params
-// into the coordinator logs, so those assertions are gated on the deployed
-// config selecting them.
-func configSelectsConnector(config, field, connector string) bool {
-	return strings.Contains(config, field+": "+connector)
+	verifyCoordinatorSteps(expectedSteps, expectedImages, true, true)
 }
 
 // verifyCoordinatorSteps fetches the coordinator pod logs and asserts that
@@ -227,17 +204,7 @@ func verifyCoordinatorSteps(expectedSteps []string, expectedImages int, kvNIXL, 
 	logs := string(out)
 	for _, step := range expectedSteps {
 		stepField := `"step":"` + step + `"`
-
-		// Verify the step was actually completed (not just started).
-		completed := false
-		for _, line := range strings.Split(logs, "\n") {
-			if strings.Contains(line, `"msg":"step complete"`) &&
-				strings.Contains(line, stepField) {
-				completed = true
-				break
-			}
-		}
-		gomega.Expect(completed).To(gomega.BeTrue(),
+		gomega.Expect(logHasLine(logs, `"msg":"step complete"`, stepField)).To(gomega.BeTrue(),
 			"coordinator logs have no 'step complete' entry for step %q", step)
 	}
 
