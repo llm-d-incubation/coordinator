@@ -209,15 +209,22 @@ func verifyCoordinatorSteps(expectedSteps []string, expectedImages int, kvNIXL, 
 	}
 
 	if kvNIXL {
-		// kv_transfer_params surfaces on two legs of the NIXL handshake.
-		// Prefill: the prefill server returns kv_transfer_params in its response
-		// body; the gateway client logs this at trace under "response body".
+		// kv_transfer_params surfaces on three legs of the NIXL handshake.
+		// Prefill request: the coordinator forwards kv_transfer_params in the
+		// outgoing prefill request body (gateway/client.go "request body" trace).
+		// Prefill response: the prefill server returns kv_transfer_params with
+		// do_remote_prefill=true; use that field to distinguish the prefill
+		// response from encode responses, which carry "kv_transfer_params":null.
 		// Decode: the request goes out via a reverse proxy the gateway client
 		// never sees, so the kv connector's "preparing decode kv params" trace,
 		// which always sets do_remote_prefill=true, is where the decode leg surfaces.
+		ginkgo.By("Verifying kv_transfer_params forwarded on the prefill request")
+		gomega.Expect(logHasLine(logs, `"msg":"request body"`, `"epp-phase":"prefill"`, `"kv_transfer_params"`)).To(gomega.BeTrue(),
+			"coordinator logs have no prefill request body carrying kv_transfer_params")
+
 		ginkgo.By("Verifying kv_transfer_params in the prefill response")
-		gomega.Expect(logHasLine(logs, `"msg":"response body"`, `"kv_transfer_params"`)).To(gomega.BeTrue(),
-			"coordinator logs have no prefill response body carrying kv_transfer_params")
+		gomega.Expect(logHasLine(logs, `"msg":"response body"`, `"do_remote_prefill":true`)).To(gomega.BeTrue(),
+			"coordinator logs have no prefill response body carrying kv_transfer_params with do_remote_prefill=true")
 
 		ginkgo.By("Verifying kv_transfer_params on the decode leg")
 		gomega.Expect(logHasLine(logs, `"msg":"preparing decode kv params"`, `"do_remote_prefill":true`)).To(gomega.BeTrue(),
