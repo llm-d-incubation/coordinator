@@ -123,12 +123,16 @@ Client  <-->  Coordinator  -->  Envoy Gateway  -->  EPP (ext_proc)  -->  vLLM wo
 
 The client opens a single connection to the coordinator. Behind it, the coordinator
 issues several requests to the Envoy Gateway and consumes each response before issuing
-the next: it is an active client of the Gateway, not a one-shot proxy. One
-request/response round-trip happens per phase (encode fans out one request per
-multimodal item; prefill and decode are one each), and the coordinator sequences them,
-threading state from each response into the next request. Each call goes to Envoy, which
-routes it by the `EPP-Phase` header to the matching per-phase EPP and then to a pod in
-that phase's pool.
+the next: it is an active client of the Gateway, not a one-shot proxy. A single step
+can also fan out into several parallel requests: `replace-media-urls` downloads media
+concurrently (to the source URLs), and `encode` issues one Gateway request per
+multimodal item in parallel. The number and shape of these requests depend on the input
+(how many multimodal entries it carries) and on the coordinator configuration (which
+steps are enabled and how they are parameterized); a text-only request needs no media
+download or encode at all. Across phases the coordinator sequences the round-trips
+(prefill and decode are one each), threading state from each response into the next
+request. Each Gateway call goes to Envoy, which routes it by the `EPP-Phase` header to
+the matching per-phase EPP and then to a pod in that phase's pool.
 
 The pipeline of steps, taken from the canonical configuration:
 
