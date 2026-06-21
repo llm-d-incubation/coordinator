@@ -128,17 +128,11 @@ can also fan out into several parallel requests: `replace-media-urls` downloads 
 concurrently (to the source URLs), and `encode` issues one Gateway request per
 multimodal item in parallel. The number and shape of these requests depend on the input
 (how many multimodal entries it carries) and on the coordinator configuration (which
-steps are enabled and how they are parameterized); a text-only request needs no media
+steps are enabled and how they are parameterized); text-only requests need no media
 download or encode at all. Across phases the coordinator sequences the round-trips
 (prefill and decode are one each), threading state from each response into the next
-request. Each Gateway call goes to Envoy, which routes it by the `EPP-Phase` header to
+request. Each Gateway call routes it by the `EPP-Phase` header to
 the matching per-phase EPP and then to a pod in that phase's pool.
-
-The pipeline of steps, taken from the canonical configuration:
-
-```
-[replace-media-urls] -> [render] -> [conditional-decode] -> [encode] -> [prefill] -> [decode]
-```
 
 Steps are skipped at runtime when they do not apply (for example, `encode` is a no-op
 when the request has no multimodal entries, and `render` short-circuits when the
@@ -161,7 +155,9 @@ completions prompt is already a token array). See
 
 1. [pkg/server/handlers.go](../pkg/server/handlers.go) reads and size-limits the body,
    parses it into a `map[string]any`, extracts `model` and `stream`, assigns or reuses
-   the request ID, and constructs a `RequestContext`.
+   the request ID, and constructs a `RequestContext`. Malformed input is rejected before
+   the pipeline runs: an unreadable body or invalid JSON returns `400 Bad Request`, and a
+   body exceeding the fixed built-in size limit returns `413 Request Entity Too Large`.
 2. The server calls `pipeline.Execute(ctx, reqCtx)`.
 3. [pkg/pipeline/pipeline.go](../pkg/pipeline/pipeline.go) runs each step in order. A
    step returning a normal error aborts the request (the server returns 502). A step
