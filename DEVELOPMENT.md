@@ -52,8 +52,7 @@ K8S_CONTEXT=kind-e2e-coordinator-tests go test -v ./test/e2e/coordinator/...
 |---|---|---|
 | `COORDINATOR_IMAGE` | _(required)_ | Coordinator image loaded into the Kind cluster |
 | `EPP_IMAGE` | `ghcr.io/llm-d/llm-d-router-endpoint-picker:dev` | EPP image |
-| `VLLM_IMAGE` | `ghcr.io/llm-d/llm-d-inference-sim:v0.9.2` | vLLM simulator image |
-| `VLLM_RENDER_IMAGE` | `vllm/vllm-openai-cpu:v0.21.0` | Render sidecar image |
+| `VLLM_IMAGE` | `ghcr.io/llm-d/llm-d-inference-sim:v0.10.0` | vLLM simulator image |
 | `MODEL_NAME` | `Qwen/Qwen3-VL-2B-Instruct` | Model name sent in requests and sidecar args |
 | `NAMESPACE` | `default` | Namespace to deploy test resources into |
 | `K8S_CONTEXT` | _(empty)_ | Use an existing cluster context instead of creating a Kind cluster |

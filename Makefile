@@ -5,7 +5,7 @@ include versions.mk
 
 # Export all dev-env image references so the e2e suite sees them.
 export IMAGE_REGISTRY COORDINATOR_TAG VLLM_SIMULATOR_TAG EPP_TAG
-export COORDINATOR_IMAGE VLLM_IMAGE VLLM_RENDER_IMAGE EPP_IMAGE
+export COORDINATOR_IMAGE VLLM_IMAGE EPP_IMAGE
 
 # Defaults
 TARGETOS ?= $(shell command -v go >/dev/null 2>&1 && go env GOOS || uname -s | tr '[:upper:]' '[:lower:]')
