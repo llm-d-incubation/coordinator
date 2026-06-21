@@ -442,7 +442,7 @@ func NewExampleStep(params map[string]any) (pipeline.Step, error) {
     return &ExampleStep{threshold: threshold}, nil
 }
 
-// SetGatewayClient is called by the entrypoint when the step is gatewayAware.
+// SetGatewayClient satisfies gateway.ClientAware; the entrypoint calls it after construction.
 func (s *ExampleStep) SetGatewayClient(c *gateway.Client) { s.gwClient = c }
 
 func (s *ExampleStep) Name() string { return ExampleStepName }
@@ -476,20 +476,28 @@ The pipeline registry constructs a step only from its `params`. Dependencies tha
 config (the gateway client, a side-service address) are injected by the entrypoint after
 construction, via optional setter interfaces it type-asserts against.
 
-[cmd/coordinator/main.go](../cmd/coordinator/main.go) currently injects the gateway
-client:
+The gateway client is injected through the `gateway.ClientAware` interface
+([pkg/gateway/client.go](../pkg/gateway/client.go)):
 
 ```go
-type gatewayAware interface {
-    SetGatewayClient(*gateway.Client)
+// in pkg/gateway
+type ClientAware interface {
+    SetGatewayClient(*Client)
 }
-if ga, ok := step.(gatewayAware); ok {
+```
+
+[cmd/coordinator/main.go](../cmd/coordinator/main.go) applies it after building each step:
+
+```go
+if ga, ok := step.(gateway.ClientAware); ok {
     ga.SetGatewayClient(gwClient)
 }
 ```
 
-If a step needs the gateway client, implement `SetGatewayClient(*gateway.Client)`. To
-inject a new dependency, add an analogous setter interface and a type-assert block in
+If a step needs the gateway client, implement `gateway.ClientAware` (a
+`SetGatewayClient(*gateway.Client)` method); the four Gateway-facing steps (`encode`,
+`prefill`, `decode`, `conditional-decode`) do. To inject a different dependency, define an
+analogous setter interface next to that dependency and add a type-assert block in
 `buildPipeline`. Keep injection optional: a step that does not implement the interface is
 left untouched.
 
