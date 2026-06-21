@@ -1,17 +1,42 @@
 # Coordinator Architecture
 
-The coordinator is a Go service that accepts OpenAI-compatible inference requests and
-drives them through a configurable pipeline of steps. Each step performs one unit of
+The coordinator is a Go service that accepts inference requests and drives them through
+a configurable pipeline of steps. It currently supports the OpenAI-compatible API
+(`/v1/chat/completions`, `/v1/completions`), and the entry layer is designed to be
+extended to other inference protocols. Each step performs one unit of
 work (download media, tokenize, encode, prefill, decode) and forwards sub-requests to
 vLLM worker pools through an Envoy Gateway. An Endpoint Picker (EPP) sitting behind
 Envoy selects the concrete pod for each phase, so the coordinator orchestrates the
 phases without knowing pod addresses.
 
-The two goals the design serves:
+The coordinator is stateless: all per-request state lives on a `RequestContext` that
+exists only for the lifetime of that request, and nothing is shared or persisted across
+requests. Any instance can serve any request, so the service scales horizontally by
+running more replicas behind a load balancer with no coordination between them.
 
-- Defer vLLM node selection to the EPP, one phase at a time.
+The goals the design serves:
+
+- Easy extensibility: steps are self-contained plugins registered by name, so new
+  processing stages are added without touching the pipeline or other steps (see
+  [Creating a new step](#creating-a-new-step-plugin)).
+- Versatile request processing: an ordered pipeline of independent steps that can be
+  combined or reordered per deployment.
+- Flexible disaggregation: the same steps can run combined (decode alone, or
+  prefill+decode on one worker) or fully disaggregated (encode, prefill, decode on
+  separate pools), chosen by configuration.
+- Request-processing optimization: skip work that does not apply (no media download for
+  text-only requests, no encode without multimodal content) and short-circuit when a
+  worker can serve directly (the conditional-decode fast path).
+- Both deferred and non-deferred vLLM node selection: defer pod selection to the EPP one
+  phase at a time, or let a worker serve a request directly when it already holds the
+  needed state.
 - Tokenize the prompt once (in the render step) and reuse the token IDs across encode,
   prefill, and decode, so workers never re-tokenize.
+- Pluggable KV and EC data transfer: select push- or pull-based transfer protocols
+  (NIXL, SGLang, shared storage) per deployment without changing the steps.
+
+This is a non-exhaustive list; the pipeline/step and connector abstractions are meant to
+absorb further processing modes as they are added.
 
 ## Table of Contents
 
