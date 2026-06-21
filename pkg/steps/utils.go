@@ -11,6 +11,12 @@ import (
 	"github.com/llm-d/coordinator/pkg/pipeline"
 )
 
+// upstreamError builds a pipeline.UpstreamError tagged with the step name so the
+// server can map an upstream 4xx to a client error and a 5xx to a gateway fault.
+func upstreamError(step string, statusCode int, body []byte) error {
+	return &pipeline.UpstreamError{Step: step, StatusCode: statusCode, Body: string(body)}
+}
+
 func copyBody(src map[string]any) map[string]any {
 	dst := make(map[string]any, len(src))
 	for k, v := range src {

@@ -14,6 +14,26 @@ import (
 // The pipeline treats this as success and stops executing further steps.
 var ErrPipelineDone = errors.New("pipeline done")
 
+// ErrBadRequest marks a step failure as caused by invalid client input rather
+// than an internal or upstream fault. Steps wrap it (with %w) when rejecting a
+// malformed request so the server can answer 400 instead of 502.
+var ErrBadRequest = errors.New("bad request")
+
+// UpstreamError carries the HTTP status a step received from an upstream
+// service (render, gateway). The server forwards a 4xx status to the client
+// (the request was the root cause) and treats 5xx as a 502 gateway fault.
+// Body holds the upstream response for server-side logging only; it is not
+// sent to the client.
+type UpstreamError struct {
+	Step       string
+	StatusCode int
+	Body       string
+}
+
+func (e *UpstreamError) Error() string {
+	return fmt.Sprintf("%s: upstream returned HTTP %d: %s", e.Step, e.StatusCode, e.Body)
+}
+
 // Pipeline orchestrates the sequential execution of steps.
 type Pipeline struct {
 	steps []Step

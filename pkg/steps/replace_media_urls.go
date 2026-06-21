@@ -118,7 +118,7 @@ func (s *ReplaceMediaURLsStep) Execute(ctx context.Context, reqCtx *pipeline.Req
 	}
 
 	if s.maxMultimodalEntries > 0 && len(imageURLs) > s.maxMultimodalEntries {
-		return fmt.Errorf("too many multimodal entries: got %d, max %d", len(imageURLs), s.maxMultimodalEntries)
+		return fmt.Errorf("too many multimodal entries: got %d, max %d: %w", len(imageURLs), s.maxMultimodalEntries, pipeline.ErrBadRequest)
 	}
 
 	g, gCtx := errgroup.WithContext(ctx)
@@ -129,7 +129,7 @@ func (s *ReplaceMediaURLsStep) Execute(ctx context.Context, reqCtx *pipeline.Req
 		if strings.HasPrefix(ref.url, "data:") {
 			contentType, b64, err := parseDataURI(ref.url)
 			if err != nil {
-				return fmt.Errorf("parsing data URI at message %d part %d: %w", ref.msgIdx, ref.partIdx, err)
+				return fmt.Errorf("parsing data URI at message %d part %d: %w: %w", ref.msgIdx, ref.partIdx, err, pipeline.ErrBadRequest)
 			}
 			results[i] = downloadResult{ref: ref, base64Data: b64, contentType: contentType}
 			continue

@@ -87,7 +87,7 @@ func (s *PrefillStep) Execute(ctx context.Context, reqCtx *pipeline.RequestConte
 
 	if resp.StatusCode/100 != 2 {
 		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("prefill: HTTP %d: %s", resp.StatusCode, string(respBody))
+		return upstreamError(PrefillStepName, resp.StatusCode, respBody)
 	}
 
 	var prefillResp prefillResponse

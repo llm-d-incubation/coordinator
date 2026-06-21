@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -72,8 +73,25 @@ func (s *Server) handleInference(w http.ResponseWriter, r *http.Request) {
 
 	if err := s.pipeline.Execute(ctx, reqCtx); err != nil {
 		logger.Error(err, "pipeline execution failed")
-		http.Error(w, fmt.Sprintf("internal error (request_id: %s)", reqCtx.RequestID), http.StatusBadGateway)
+		status, msg := classifyPipelineError(err, reqCtx.RequestID)
+		http.Error(w, msg, status)
 	}
+}
+
+// classifyPipelineError maps a pipeline error to a client-facing status and
+// message. Invalid client input is 400. An upstream 4xx is forwarded with its
+// status (the request was the root cause); any other upstream status, and every
+// other error, is a 502 gateway fault. Upstream response bodies stay in the
+// server log (logged by the caller) and are never sent to the client.
+func classifyPipelineError(err error, requestID string) (int, string) {
+	if errors.Is(err, pipeline.ErrBadRequest) {
+		return http.StatusBadRequest, fmt.Sprintf("bad request (request_id: %s)", requestID)
+	}
+	var upstream *pipeline.UpstreamError
+	if errors.As(err, &upstream) && upstream.StatusCode >= 400 && upstream.StatusCode < 500 {
+		return upstream.StatusCode, fmt.Sprintf("%s rejected the request: HTTP %d (request_id: %s)", upstream.Step, upstream.StatusCode, requestID)
+	}
+	return http.StatusBadGateway, fmt.Sprintf("internal error (request_id: %s)", requestID)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
