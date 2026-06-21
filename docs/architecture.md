@@ -592,7 +592,7 @@ single step may override the default in its own `params` (`kv_connector:` /
 steps:
 
 - `true` (default): forward the client's original OpenAI path (`/v1/chat/completions`,
-  `/v1/completions`) with an added `tokens` field carrying `token_ids` and `features`.
+  `/v1/completions`).
 - `false`: the tokens-in format. Rewrite to the internal `/inference/v1/generate`
   token-array endpoint, sending `token_ids` and `features` (including `kwargs_data`)
   directly in the body.
