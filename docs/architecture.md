@@ -325,7 +325,7 @@ KV connector protocol is selected on the sidecar with `--kv-connector` (`nixlv2`
 The coordinator removes the sidecar entirely and pulls orchestration out to a standalone
 service in front of Envoy:
 
-1. The client request reaches the **coordinator**, not Envoy directly.
+1. The client request reaches the **coordinator**.
 2. The coordinator tokenizes once via the render service, then makes **one
    EPP-mediated call per phase** to Envoy, tagging each with the `EPP-Phase` header.
    Each EPP call is single-phase scheduling, not a one-cycle selection of all phases.
@@ -341,25 +341,12 @@ service in front of Envoy:
 | :---- | :---- | :---- |
 | Orchestration location | vLLM sidecar on the decode pod | Standalone coordinator service in front of Envoy |
 | Sidecar required | Yes (decode pod only) | No |
+| Pipeline versatility | Fixed E/P/D orchestration baked into the sidecar | Configurable pipeline of independent, reorderable plugin steps; new stages added without touching existing ones |
 | EPP scheduling | One cycle selects all phases (`disagg-profile-handler`) | One EPP call per phase, coordinator drives the cascade |
+| vLLM pod selection | All phase pods chosen up front in one scheduling cycle | Deferred per phase: each pod is selected only when that phase's call is made, at the point its destination becomes relevant |
 | Phase selection signal | EPP request headers `x-prefiller-host-port`, `x-encoder-hosts-ports` read by the sidecar | `EPP-Phase` header per call; per-phase EPP picks the pod |
 | Tokenization | On the workers | Once, in the coordinator's render step; token IDs reused downstream |
 | Cross-phase state | Held by the sidecar | Held on the coordinator `RequestContext` |
-| Request bodies to workers | Built by the sidecar | Built by the coordinator (connector-shaped `kv`/`ec_transfer_params`) |
-| Connector selection | `--kv-connector` on the sidecar | `kv_connector` / `ec_connector` in coordinator config |
-
-### Why move orchestration out of the sidecar
-
-- Single tokenization point. The coordinator renders the prompt once and threads token
-  IDs through every phase, so workers never re-tokenize. (See
-  [Format tradeoff](#format-tradeoff) for the size/recompute implications.)
-- One place to evolve the cascade. Adding or reordering a phase is a pipeline-step
-  change in one service, rather than coordinated changes across sidecar and EPP.
-- No per-decode-pod sidecar to deploy or version. Decode pods run plain vLLM.
-
-The decider plugins (`prefix-based-pd-decider`, `always-disagg-pd-decider`,
-`always-disagg-multimodal-decider`) and the per-phase EPP selection are shared between
-the two models; only the orchestrator differs.
 
 ---
 
@@ -367,7 +354,8 @@ the two models; only the orchestrator differs.
 
 A step is the unit of extension. The pipeline knows nothing about concrete steps; it
 calls the `Step` interface and looks steps up by name in a registry. To add behavior,
-write a step, register it, and reference it by `type` in the config.
+write a step, register it under a type name, and reference that name via the `type`
+field in the config.
 
 Before writing a new step, read the closest existing one. [render.go](../pkg/steps/render.go)
 is the reference for calling a side service; [encode.go](../pkg/steps/encode.go) is the
