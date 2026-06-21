@@ -551,11 +551,11 @@ gateway:              # outbound client to Envoy
   max_idle_conns_per_host: 100
   idle_conn_timeout: 90s
   timeout: 60s
-  use_openai_format: true
 
 pipeline:             # connector defaults + ordered steps
   kv_connector: kv-shared-storage
   ec_connector: ec-shared-storage
+  use_openai_format: true
   steps:
     - type: <step-type>
       params: { ... }
@@ -568,7 +568,7 @@ order in the file is the execution order; there is no implicit reordering.
 
 Any key can be overridden by an environment variable prefixed `COORDINATOR_`, with `.`
 replaced by `_` (viper `AutomaticEnv`). The env value wins over the YAML value. The
-documented example is `COORDINATOR_GATEWAY_USE_OPENAI_FORMAT`. The CLI flag `-v` overrides
+documented example is `COORDINATOR_PIPELINE_USE_OPENAI_FORMAT`. The CLI flag `-v` overrides
 `log_level`.
 
 ### Connector selection
@@ -588,7 +588,7 @@ single step may override the default in its own `params` (`kv_connector:` /
 
 ### Should the coordinator use the tokens-in format?
 
-`gateway.use_openai_format` selects the wire format for the encode and prefill steps
+`pipeline.use_openai_format` selects the wire format for the encode and prefill steps
 (the steps that choose their upstream endpoint by format). Decode and conditional-decode
 always forward on the client's original OpenAI path and are unaffected by this setting:
 
@@ -600,6 +600,10 @@ always forward on the client's original OpenAI path and are unaffected by this s
 
 A step can override the global with `use_openai_format:` in its own `params`. The
 exact bodies per format are in [communication.md](communication.md).
+
+`false` requires a `render` step in the pipeline: render produces the token IDs the
+tokens-in format sends, so the coordinator fails to start when `false` is set without a
+`render` step configured.
 
 The tokens-in path (`false`) is **experimental**. It is the intended direction (a native
 tokens-in endpoint, no re-tokenization), but the `/inference/v1/generate` endpoint is
