@@ -33,6 +33,10 @@ The goals the design serves:
   needed state.
 - Tokenize the prompt once (in the render step) and reuse the token IDs across encode,
   prefill, and decode, so workers never re-tokenize.
+- Tokens-in / tokens-out operation: steps can exchange token IDs directly instead of
+  raw text, cutting per-step tokenization to a single render pass. This is also
+  beneficial for reinforcement learning (RL), where the training loop works in token
+  space and avoids the detokenize/re-tokenize round-trips a text-only interface forces.
 - Pluggable KV and EC data transfer: select push- or pull-based transfer protocols
   (NIXL, SGLang, shared storage) per deployment without changing the steps.
 
@@ -76,12 +80,13 @@ absorb further processing modes as they are added.
 
 ## High-level picture
 
-A client sends an OpenAI request to the coordinator. The coordinator pre-processes the
-request (media download, tokenization) against side services, then makes one call per
-phase to Envoy. Envoy consults the per-phase EPP (Encode / Prefill / Decode), which
-picks a vLLM pod from that phase's pool. State that must survive across phases (token
-IDs, multimodal hashes, KV/EC transfer descriptors) lives on a per-request context held
-by the coordinator, not in a sidecar on the decode pod.
+A client sends an inference request to the coordinator. The coordinator pre-processes the
+request (media download, tokenization) against side services, then makes one inference
+call per phase to the Envoy Gateway. The Gateway consults the per-phase EPP
+(Encode / Prefill / Decode), which picks a vLLM pod from that phase's pool. State that
+must survive across phases (token IDs, multimodal hashes, KV/EC transfer descriptors)
+lives on a per-request context held by the coordinator, not in a sidecar on the decode
+pod.
 
 ```
                                                         side services
@@ -107,13 +112,23 @@ by the coordinator, not in a sidecar on the decode pod.
 In short:
 
 ```
-Client -> Coordinator -> Envoy Gateway -> EPP (ext_proc) -> vLLM worker pool
+                         one request+response per phase (encode, prefill, decode)
+                        +---------------------------------------------------------+
+                        |                                                         v
+Client  <-->  Coordinator  -->  Envoy Gateway  -->  EPP (ext_proc)  -->  vLLM worker pool
+                        ^                                                         |
+                        +---------------------------------------------------------+
+                                          response streamed/returned
 ```
 
-The coordinator and the model servers both exchange "tokens in the prompt" with Envoy so
-the prompt is tokenized once and never re-tokenized downstream. Each phase call goes from
-the coordinator to Envoy, which routes it by the `EPP-Phase` header to the matching
-per-phase EPP and then to a pod in that phase's pool.
+The client opens a single connection to the coordinator. Behind it, the coordinator
+issues several requests to the Envoy Gateway and consumes each response before issuing
+the next: it is an active client of the Gateway, not a one-shot proxy. One
+request/response round-trip happens per phase (encode fans out one request per
+multimodal item; prefill and decode are one each), and the coordinator sequences them,
+threading state from each response into the next request. Each call goes to Envoy, which
+routes it by the `EPP-Phase` header to the matching per-phase EPP and then to a pod in
+that phase's pool.
 
 The pipeline of steps, taken from the canonical configuration:
 
