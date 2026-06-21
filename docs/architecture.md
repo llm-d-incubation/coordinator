@@ -73,7 +73,7 @@ absorb further processing modes as they are added.
   - [Top-level structure](#top-level-structure)
   - [Environment overrides](#environment-overrides)
   - [Connector selection](#connector-selection)
-  - [Request format](#request-format)
+  - [Should the coordinator use the tokens-in format?](#should-the-coordinator-use-the-tokens-in-format)
   - [The built-in steps](#the-built-in-steps)
   - [Adding a step to the pipeline](#adding-a-step-to-the-pipeline)
 - [References](#references)
@@ -512,8 +512,8 @@ kvConn, err := kv.Build(kvName) // kvName from params[ParamKVConnector]
 ecConn, err := ec.Build(ecName) // ecName from params[ParamECConnector]
 ```
 
-- `kv.Connector` ([pkg/connectors/kv/kv.go](../pkg/connectors/kv/kv.go)) shapes
-  `kv_transfer_params` for prefill and decode.
+- `kv.Connector` ([pkg/connectors/kv/kv.go](../pkg/connectors/kv/kv.go)) shapes the
+  `kv_transfer_params` written into the prefill and decode request bodies.
 - `ec.Connector` ([pkg/connectors/ec/ec.go](../pkg/connectors/ec/ec.go)) merges encode
   responses and shapes `ec_transfer_params` for prefill.
 
@@ -586,18 +586,26 @@ KV and EC are independent: `ec-nixl` can pair with `kv-shared-storage`, and so o
 single step may override the default in its own `params` (`kv_connector:` /
 `ec_connector:`), which is rarely needed.
 
-### Request format
+### Should the coordinator use the tokens-in format?
 
 `gateway.use_openai_format` selects the wire format for the encode, prefill, and decode
 steps:
 
 - `true` (default): forward the client's original OpenAI path (`/v1/chat/completions`,
   `/v1/completions`) with an added `tokens` field carrying `token_ids` and `features`.
-- `false`: rewrite to the internal `/inference/v1/generate` token-array format, sending
-  `token_ids` and `features` (including `kwargs_data`) directly in the body.
+- `false`: the tokens-in format. Rewrite to the internal `/inference/v1/generate`
+  token-array endpoint, sending `token_ids` and `features` (including `kwargs_data`)
+  directly in the body.
 
 A step can override the global with `use_openai_format:` in its own `params`. The
 exact bodies per format are in [communication.md](communication.md).
+
+The tokens-in path (`false`) is **experimental**. It is the intended direction (a native
+tokens-in endpoint, no re-tokenization), but the `/inference/v1/generate` endpoint is
+relatively new and, as shown in [Format tradeoff](#format-tradeoff), its request bodies
+carry the full preprocessor output and grow sharply with image resolution. The
+OpenAI-format path (`true`) remains the tested default until those limitations are
+addressed.
 
 #### Format tradeoff
 
