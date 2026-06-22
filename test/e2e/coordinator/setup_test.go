@@ -291,7 +291,7 @@ func coordinatorSubstitutions() map[string]string {
 func rendererSubstitutions() map[string]string {
 	return map[string]string{
 		"${VLLM_IMAGE}": vllmSimImage,
-		"${MODEL_NAME}":        modelName,
+		"${MODEL_NAME}": modelName,
 	}
 }
 
