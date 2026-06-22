@@ -11,14 +11,18 @@ import (
 	"testing"
 
 	"github.com/llm-d/coordinator/pkg/config"
+	"github.com/llm-d/coordinator/pkg/connectors/kv"
 	"github.com/llm-d/coordinator/pkg/gateway"
 	"github.com/llm-d/coordinator/pkg/pipeline"
 )
 
 func TestDecodeStep_NonStreaming(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/decode/v1/chat/completions" {
+		if r.URL.Path != testChatCompletionsPath {
 			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		if r.Header.Get(gateway.EPPPhaseHeader) != gateway.PhaseDecode {
+			t.Fatalf("expected EPP-Phase: decode, got %q", r.Header.Get(gateway.EPPPhaseHeader))
 		}
 
 		body, _ := io.ReadAll(r.Body)
@@ -43,8 +47,21 @@ func TestDecodeStep_NonStreaming(t *testing.T) {
 		if kvParams["peer_host"] != "10.0.0.5" {
 			t.Errorf("kv_transfer_params.peer_host = %v, want 10.0.0.5", kvParams["peer_host"])
 		}
+		if kvParams["do_remote_decode"] != false {
+			t.Errorf("kv_transfer_params.do_remote_decode = %v, want false", kvParams["do_remote_decode"])
+		}
 		if kvParams["do_remote_prefill"] != true {
 			t.Errorf("kv_transfer_params.do_remote_prefill = %v, want true", kvParams["do_remote_prefill"])
+		}
+
+		// Verify tokens field present for chat completions format
+		tokens, ok := parsed["tokens"].(map[string]any)
+		if !ok {
+			t.Fatal("expected tokens field in chat/completions decode request")
+		}
+		tokenIDs, _ := tokens["token_ids"].([]any)
+		if len(tokenIDs) != 5 {
+			t.Fatalf("expected 5 token_ids in tokens field, got %d", len(tokenIDs))
 		}
 
 		// Verify uuid was injected into the image_url content part
@@ -74,7 +91,7 @@ func TestDecodeStep_NonStreaming(t *testing.T) {
 
 	gwClient := gateway.New(config.GatewayConfig{Address: server.URL})
 
-	step, err := NewDecodeStep(map[string]any{})
+	step, err := NewDecodeStep(map[string]any{ParamKVConnector: kv.NIXL})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,11 +100,12 @@ func TestDecodeStep_NonStreaming(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	reqCtx := &pipeline.RequestContext{
 		RequestID:    "req-1",
-		OriginalPath: "/v1/chat/completions",
+		OriginalPath: testChatCompletionsPath,
 		Model:        "llama-3",
 		Stream:       false,
+		TokenIDs:     []int{1, 32000, 32000, 32000, 2345},
 		MultimodalEntries: []pipeline.MultimodalEntry{
-			{Index: 0, Hash: "hash-a"},
+			{Index: 0, Hash: "hash-a", Placeholder: pipeline.PlaceholderRange{Offset: 1, Length: 3}},
 		},
 		KVTransferParams: map[string]any{"block_id": "xyz", "peer_host": "10.0.0.5", "peer_port": 7777},
 		Body: map[string]any{
@@ -106,7 +124,6 @@ func TestDecodeStep_NonStreaming(t *testing.T) {
 			},
 		},
 		ResponseWriter: recorder,
-		Flusher:        recorder,
 	}
 
 	err = step.Execute(context.Background(), reqCtx)
@@ -122,6 +139,43 @@ func TestDecodeStep_NonStreaming(t *testing.T) {
 	respBody, _ := io.ReadAll(result.Body)
 	if !strings.Contains(string(respBody), "I see a cat.") {
 		t.Fatalf("expected response to contain 'I see a cat.', got: %s", string(respBody))
+	}
+}
+
+func TestDecodeStep_CompletionsFormat_NoRenderedTokens(t *testing.T) {
+	var parsed map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &parsed)
+		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []map[string]any{{"text": "ok"}}})
+	}))
+	defer server.Close()
+
+	gwClient := gateway.New(config.GatewayConfig{Address: server.URL})
+	step, err := NewDecodeStep(map[string]any{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	step.(*DecodeStep).SetGatewayClient(gwClient)
+
+	recorder := httptest.NewRecorder()
+	reqCtx := &pipeline.RequestContext{
+		RequestID:        "req-compl",
+		OriginalPath:     gateway.PathCompletions,
+		Model:            "test-model",
+		TokenIDs:         nil,
+		KVTransferParams: map[string]any{},
+		Body:             map[string]any{"model": "test-model", "prompt": "Hello"},
+		ResponseWriter:   recorder,
+	}
+
+	if err := step.Execute(context.Background(), reqCtx); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if parsed["prompt"] != "Hello" {
+		t.Fatalf("expected original prompt to pass through, got %v", parsed["prompt"])
 	}
 }
 
@@ -159,7 +213,7 @@ func TestDecodeStep_Streaming(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	reqCtx := &pipeline.RequestContext{
 		RequestID:    "req-1",
-		OriginalPath: "/v1/chat/completions",
+		OriginalPath: testChatCompletionsPath,
 		Model:        "test",
 		Stream:       true,
 		MultimodalEntries: []pipeline.MultimodalEntry{
@@ -168,7 +222,6 @@ func TestDecodeStep_Streaming(t *testing.T) {
 		KVTransferParams: map[string]any{},
 		Body:             map[string]any{"model": "test", "stream": true},
 		ResponseWriter:   recorder,
-		Flusher:          recorder,
 	}
 
 	err := step.Execute(context.Background(), reqCtx)
@@ -206,7 +259,7 @@ func TestDecodeStep_GatewayError(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	reqCtx := &pipeline.RequestContext{
 		RequestID:    "req-1",
-		OriginalPath: "/v1/chat/completions",
+		OriginalPath: testChatCompletionsPath,
 		Model:        "test",
 		Stream:       false,
 		MultimodalEntries: []pipeline.MultimodalEntry{
@@ -215,11 +268,20 @@ func TestDecodeStep_GatewayError(t *testing.T) {
 		KVTransferParams: map[string]any{},
 		Body:             map[string]any{"model": "test", "stream": false},
 		ResponseWriter:   recorder,
-		Flusher:          recorder,
 	}
 
 	err := step.Execute(context.Background(), reqCtx)
-	if err == nil {
-		t.Fatal("expected error for 502 response")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	result := recorder.Result()
+	if result.StatusCode != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d", result.StatusCode)
+	}
+
+	respBody, _ := io.ReadAll(result.Body)
+	if !strings.Contains(string(respBody), "upstream unavailable") {
+		t.Fatalf("expected error body forwarded, got: %s", string(respBody))
 	}
 }

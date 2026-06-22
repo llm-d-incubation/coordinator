@@ -8,9 +8,10 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	logutil "github.com/llm-d/llm-d-inference-scheduler/pkg/common/observability/logging"
-	reqcommon "github.com/llm-d/llm-d-inference-scheduler/pkg/common/request"
+	logutil "github.com/llm-d/llm-d-router/pkg/common/observability/logging"
+	reqcommon "github.com/llm-d/llm-d-router/pkg/common/request"
 
+	"github.com/llm-d/coordinator/pkg/common/httplog"
 	"github.com/llm-d/coordinator/pkg/connectors/ec"
 	"github.com/llm-d/coordinator/pkg/gateway"
 	"github.com/llm-d/coordinator/pkg/pipeline"
@@ -24,17 +25,14 @@ func init() {
 }
 
 type EncodeStep struct {
-	gatewayPath string
-	maxParallel int
-	gwClient    *gateway.Client
-	ec          ec.Connector
+	useOpenAIFormat bool
+	maxParallel     int
+	gwClient        *gateway.Client
+	ec              ec.Connector
 }
 
 func NewEncodeStep(params map[string]any) (pipeline.Step, error) {
-	path := gateway.DefaultGeneratePath
-	if v, ok := params[ParamGatewayPath].(string); ok {
-		path = v
-	}
+	useOpenAI := parseUseOpenAIFormat(params)
 	maxParallel := 8
 	if v, ok := params["max_parallel"].(int); ok {
 		if v <= 0 {
@@ -48,9 +46,9 @@ func NewEncodeStep(params map[string]any) (pipeline.Step, error) {
 		return nil, fmt.Errorf("encode: %w", err)
 	}
 	return &EncodeStep{
-		gatewayPath: path,
-		maxParallel: maxParallel,
-		ec:          ecConn,
+		useOpenAIFormat: useOpenAI,
+		maxParallel:     maxParallel,
+		ec:              ecConn,
 	}, nil
 }
 
@@ -65,7 +63,7 @@ func (s *EncodeStep) Execute(ctx context.Context, reqCtx *pipeline.RequestContex
 		return nil
 	}
 
-	logger := log.FromContext(ctx).WithName("encode")
+	logger := log.FromContext(ctx).WithName(EncodeStepName)
 
 	g, gCtx := errgroup.WithContext(ctx)
 	g.SetLimit(s.maxParallel)
@@ -76,43 +74,50 @@ func (s *EncodeStep) Execute(ctx context.Context, reqCtx *pipeline.RequestContex
 		g.Go(func() error {
 			tokenIDs := s.buildEncodeTokenIDs(reqCtx.TokenIDs, entry)
 
-			body := map[string]any{
-				"token_ids": tokenIDs,
-				"features": map[string]any{
-					"mm_hashes":       map[string][]string{"image": {entry.Hash}},
-					"mm_placeholders": map[string][]any{"image": {map[string]any{"offset": 1, "length": entry.Placeholder.Length}}},
-					"kwargs_data":     map[string][]string{"image": {entry.KwargsData}},
-				},
-				"sampling_params": map[string]any{"max_tokens": 1},
-			}
+			format := resolveFormat(s.useOpenAIFormat, reqCtx.OriginalPath)
+			body := s.buildEncodeBody(reqCtx, tokenIDs, entry, format)
 
 			bodyBytes, err := json.Marshal(body)
 			if err != nil {
-				return fmt.Errorf("encode[%d]: marshal: %w", i, err)
+				err = fmt.Errorf("encode[%d]: marshal: %w", i, err)
+				logger.Error(err, "encode fanout marshal", "index", i)
+				return err
 			}
 
-			path := fmt.Sprintf("%s%s", gateway.EncodePrefix, s.gatewayPath)
+			path := gateway.PathForFormat(format)
 			logger.V(logutil.DEFAULT).Info("sending sub-request", "index", i, "path", path)
 
-			resp, err := s.gwClient.Post(gCtx, path, bodyBytes, map[string]string{
-				reqcommon.RequestIDHeaderKey: reqCtx.RequestID,
-			})
+			headers := reqCtx.ForwardedHeaders()
+			headers[reqcommon.RequestIDHeaderKey] = reqCtx.RequestID
+			headers[gateway.EPPPhaseHeader] = gateway.PhaseEncode
+
+			if v := logger.V(logutil.DEBUG); v.Enabled() {
+				v.Info("sub-request body", "index", i, "method", "POST", "path", path, "bodyLen", len(bodyBytes), "headers", httplog.RedactedHeaders(headers))
+			}
+
+			resp, err := s.gwClient.Post(gCtx, path, bodyBytes, headers)
 			if err != nil {
-				return fmt.Errorf("encode[%d]: request: %w", i, err)
+				err = fmt.Errorf("encode[%d]: request: %w", i, err)
+				logger.Error(err, "encode fanout request", "index", i, "path", path)
+				return err
 			}
 			defer resp.Body.Close()
 
 			if resp.StatusCode/100 != 2 {
 				respBody, _ := io.ReadAll(resp.Body)
-				return fmt.Errorf("encode[%d]: HTTP %d: %s", i, resp.StatusCode, string(respBody))
+				err := upstreamError(fmt.Sprintf("%s[%d]", EncodeStepName, i), resp.StatusCode, respBody)
+				logger.Error(err, "encode fanout status", "index", i, "status", resp.StatusCode)
+				return err
 			}
 
 			var encResp encodeResponse
 			if err := json.NewDecoder(resp.Body).Decode(&encResp); err != nil {
-				return fmt.Errorf("encode[%d]: decode response: %w", i, err)
+				err = fmt.Errorf("encode[%d]: decode response: %w", i, err)
+				logger.Error(err, "encode fanout decode", "index", i)
+				return err
 			}
 
-			results[i] = encResp.ECTransferParams
+			results[i] = coerceParamsMap(logger.WithValues("index", i), encResp.ECTransferParams, "ec_transfer_params")
 			return nil
 		})
 	}
@@ -122,7 +127,7 @@ func (s *EncodeStep) Execute(ctx context.Context, reqCtx *pipeline.RequestContex
 	}
 
 	for _, r := range results {
-		s.ec.MergeEncodeResponse(reqCtx, r)
+		s.ec.MergeEncodeResponse(ctx, reqCtx, r)
 	}
 
 	logger.V(logutil.DEFAULT).Info("all sub-requests complete", "count", len(results))
@@ -147,6 +152,79 @@ func (s *EncodeStep) buildEncodeTokenIDs(fullTokenIDs []int, entry pipeline.Mult
 	return tokenIDs
 }
 
+func (s *EncodeStep) buildEncodeBody(reqCtx *pipeline.RequestContext, tokenIDs []int, entry pipeline.MultimodalEntry, format gateway.RequestFormat) map[string]any {
+	switch format {
+	case gateway.FormatChatCompletions:
+		imageContent := s.buildSingleImageContent(reqCtx, entry)
+		body := map[string]any{
+			"model": reqCtx.Model,
+			"messages": []any{
+				map[string]any{
+					"role":    "user",
+					"content": []any{imageContent},
+				},
+			},
+			"tokens": map[string]any{
+				"token_ids": tokenIDs,
+				"features": map[string]any{
+					"mm_hashes":       map[string][]string{ModalityImage: {entry.Hash}},
+					"mm_placeholders": map[string][]any{ModalityImage: {map[string]any{"offset": 1, "length": entry.Placeholder.Length}}},
+				},
+			},
+			"max_tokens": 1,
+		}
+		return body
+	default:
+		return map[string]any{
+			"model":     reqCtx.Model,
+			"token_ids": tokenIDs,
+			"features": map[string]any{
+				"mm_hashes":       map[string][]string{ModalityImage: {entry.Hash}},
+				"mm_placeholders": map[string][]any{ModalityImage: {map[string]any{"offset": 1, "length": entry.Placeholder.Length}}},
+				"kwargs_data":     map[string][]string{ModalityImage: {entry.KwargsData}},
+			},
+			"sampling_params": map[string]any{"max_tokens": 1},
+		}
+	}
+}
+
+func (s *EncodeStep) buildSingleImageContent(reqCtx *pipeline.RequestContext, entry pipeline.MultimodalEntry) map[string]any {
+	messages, _ := reqCtx.Body["messages"].([]any)
+	imgIdx := 0
+	for _, msg := range messages {
+		msgMap, ok := msg.(map[string]any)
+		if !ok {
+			continue
+		}
+		content, ok := msgMap["content"].([]any)
+		if !ok {
+			continue
+		}
+		for _, part := range content {
+			partMap, ok := part.(map[string]any)
+			if !ok {
+				continue
+			}
+			if partMap["type"] != "image_url" {
+				continue
+			}
+			if imgIdx == entry.Index {
+				return map[string]any{
+					"type":      "image_url",
+					"image_url": partMap["image_url"],
+				}
+			}
+			imgIdx++
+		}
+	}
+	return map[string]any{
+		"type":      "image_url",
+		"image_url": map[string]any{"url": ""},
+	}
+}
+
 type encodeResponse struct {
-	ECTransferParams map[string]any `json:"ec_transfer_params"`
+	// ECTransferParams is decoded as any (not map[string]any) so a non-object
+	// value does not fail the decode; coerceParamsMap coerces it.
+	ECTransferParams any `json:"ec_transfer_params"`
 }

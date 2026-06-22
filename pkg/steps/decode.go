@@ -1,21 +1,23 @@
 package steps
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	logutil "github.com/llm-d/llm-d-inference-scheduler/pkg/common/observability/logging"
-	reqcommon "github.com/llm-d/llm-d-inference-scheduler/pkg/common/request"
+	logutil "github.com/llm-d/llm-d-router/pkg/common/observability/logging"
+	reqcommon "github.com/llm-d/llm-d-router/pkg/common/request"
 
+	"github.com/llm-d/coordinator/pkg/common/httplog"
 	"github.com/llm-d/coordinator/pkg/connectors/kv"
 	"github.com/llm-d/coordinator/pkg/gateway"
 	"github.com/llm-d/coordinator/pkg/pipeline"
-	"github.com/llm-d/coordinator/pkg/server"
 )
 
 const DecodeStepName = "decode"
@@ -25,25 +27,21 @@ func init() {
 }
 
 type DecodeStep struct {
-	gatewayPath string
-	gwClient    *gateway.Client
-	kv          kv.Connector
+	useOpenAIFormat bool
+	gwClient        *gateway.Client
+	kv              kv.Connector
 }
 
 func NewDecodeStep(params map[string]any) (pipeline.Step, error) {
-	path := gateway.DefaultGeneratePath
-	if v, ok := params[ParamGatewayPath].(string); ok {
-		path = v
-	}
+	useOpenAI := parseUseOpenAIFormat(params)
 	kvName, _ := params[ParamKVConnector].(string)
 	kvConn, err := kv.Build(kvName)
 	if err != nil {
 		return nil, fmt.Errorf("decode: %w", err)
 	}
-	return &DecodeStep{gatewayPath: path, kv: kvConn}, nil
+	return &DecodeStep{useOpenAIFormat: useOpenAI, kv: kvConn}, nil
 }
 
-// SetGatewayClient injects the shared gateway client.
 func (s *DecodeStep) SetGatewayClient(c *gateway.Client) {
 	s.gwClient = c
 }
@@ -51,35 +49,75 @@ func (s *DecodeStep) SetGatewayClient(c *gateway.Client) {
 func (s *DecodeStep) Name() string { return DecodeStepName }
 
 func (s *DecodeStep) Execute(ctx context.Context, reqCtx *pipeline.RequestContext) error {
-	logger := log.FromContext(ctx).WithName("decode")
-	reqCtx.Body["kv_transfer_params"] = s.kv.PrepareDecodeKVParams(reqCtx)
-	s.injectUUIDs(reqCtx)
+	logger := log.FromContext(ctx).WithName(DecodeStepName)
+
+	s.prepareDecodeBody(ctx, reqCtx)
 
 	bodyBytes, err := json.Marshal(reqCtx.Body)
 	if err != nil {
 		return fmt.Errorf("decode: marshal: %w", err)
 	}
 
-	path := fmt.Sprintf("%s%s", gateway.DecodePrefix, reqCtx.OriginalPath)
+	path := reqCtx.OriginalPath
 	logger.V(logutil.DEFAULT).Info("sending request", "path", path, "stream", reqCtx.Stream)
 
-	resp, err := s.gwClient.Post(ctx, path, bodyBytes, map[string]string{
-		reqcommon.RequestIDHeaderKey: reqCtx.RequestID,
-	})
+	upstreamURL, err := url.Parse(s.gwClient.BaseURL() + path)
 	if err != nil {
-		return fmt.Errorf("decode: request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode/100 != 2 {
-		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("decode: HTTP %d: %s", resp.StatusCode, string(respBody))
+		return fmt.Errorf("decode: parse url: %w", err)
 	}
 
-	if reqCtx.Stream {
-		return s.streamResponse(reqCtx, resp)
+	proxyReq, err := http.NewRequestWithContext(ctx, http.MethodPost, upstreamURL.String(), bytes.NewReader(bodyBytes))
+	if err != nil {
+		return fmt.Errorf("decode: creating request: %w", err)
 	}
-	return s.bufferResponse(reqCtx, resp)
+	proxyReq.ContentLength = int64(len(bodyBytes))
+	proxyReq.Header.Set(gateway.ContentTypeHeader, gateway.ContentTypeJSON)
+	for k, v := range reqCtx.ForwardedHeaders() {
+		proxyReq.Header.Set(k, v)
+	}
+	proxyReq.Header.Set(reqcommon.RequestIDHeaderKey, reqCtx.RequestID)
+	proxyReq.Header.Set(gateway.EPPPhaseHeader, gateway.PhaseDecode)
+
+	if v := logger.V(logutil.DEBUG); v.Enabled() {
+		v.Info("request body", "method", "POST", "path", path, "bodyLen", len(bodyBytes), "headers", httplog.RedactedHeaders(proxyReq.Header))
+	}
+
+	proxy := &httputil.ReverseProxy{
+		Director:      func(_ *http.Request) {},
+		FlushInterval: -1,
+		Transport:     s.gwClient.Transport(),
+		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, proxyErr error) {
+			logger.Error(proxyErr, "proxy error")
+			w.WriteHeader(http.StatusBadGateway)
+		},
+	}
+	proxy.ServeHTTP(reqCtx.ResponseWriter, proxyReq)
+	return nil
+}
+
+func (s *DecodeStep) prepareDecodeBody(ctx context.Context, reqCtx *pipeline.RequestContext) {
+	reqCtx.Body["kv_transfer_params"] = s.kv.PrepareDecodeKVParams(ctx, reqCtx)
+	s.injectUUIDs(reqCtx)
+
+	format := resolveFormat(s.useOpenAIFormat, reqCtx.OriginalPath)
+	switch format {
+	case gateway.FormatChatCompletions:
+		s.injectTokensField(reqCtx)
+	case gateway.FormatCompletions:
+		if len(reqCtx.TokenIDs) > 0 {
+			reqCtx.Body["prompt"] = reqCtx.TokenIDs
+		}
+	}
+}
+
+func (s *DecodeStep) injectTokensField(reqCtx *pipeline.RequestContext) {
+	tokens := map[string]any{
+		"token_ids": reqCtx.TokenIDs,
+	}
+	if features := buildMMFeatures(reqCtx.MultimodalEntries, false); features != nil {
+		tokens["features"] = features
+	}
+	reqCtx.Body["tokens"] = tokens
 }
 
 func (s *DecodeStep) injectUUIDs(reqCtx *pipeline.RequestContext) {
@@ -112,24 +150,4 @@ func (s *DecodeStep) injectUUIDs(reqCtx *pipeline.RequestContext) {
 			}
 		}
 	}
-}
-
-func (s *DecodeStep) streamResponse(reqCtx *pipeline.RequestContext, resp *http.Response) error {
-	server.SetSSEHeaders(reqCtx.ResponseWriter)
-	reqCtx.ResponseWriter.WriteHeader(http.StatusOK)
-	reqCtx.Flusher.Flush()
-
-	return server.StreamSSE(reqCtx.ResponseWriter, reqCtx.Flusher, resp.Body)
-}
-
-func (s *DecodeStep) bufferResponse(reqCtx *pipeline.RequestContext, resp *http.Response) error {
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("decode: reading response: %w", err)
-	}
-
-	reqCtx.ResponseWriter.Header().Set("Content-Type", "application/json")
-	reqCtx.ResponseWriter.WriteHeader(http.StatusOK)
-	_, err = reqCtx.ResponseWriter.Write(respBody)
-	return err
 }

@@ -2,30 +2,64 @@ package pipeline
 
 import (
 	"net/http"
+	"strings"
 	"time"
 )
 
+var hopByHopHeaders = map[string]bool{
+	"connection":          true,
+	"keep-alive":          true,
+	"proxy-authenticate":  true,
+	"proxy-authorization": true,
+	"te":                  true,
+	"trailers":            true,
+	"transfer-encoding":   true,
+	"upgrade":             true,
+}
+
+// ForwardedHeaders returns original request headers suitable for forwarding
+// to upstream services, excluding hop-by-hop headers and Content-Length/Host.
+// Keys are normalized to lowercase so they do not collide by case with headers
+// stamped explicitly by forwarding steps (e.g. x-request-id).
+func (rc *RequestContext) ForwardedHeaders() map[string]string {
+	out := make(map[string]string)
+	if rc.OriginalHeaders == nil {
+		return out
+	}
+	for key, vals := range rc.OriginalHeaders {
+		lower := strings.ToLower(key)
+		if hopByHopHeaders[lower] || lower == "content-length" || lower == "host" || lower == "content-type" {
+			continue
+		}
+		if len(vals) > 0 {
+			out[lower] = vals[0]
+		}
+	}
+	return out
+}
+
 // RequestContext carries all state for a single request through the pipeline.
 type RequestContext struct {
-	RequestID    string
-	OriginalPath string
-	OriginalBody []byte
-	Body         map[string]any
-	Model        string
-	Stream       bool
+	RequestID       string
+	OriginalPath    string
+	OriginalHeaders http.Header
+	OriginalBody    []byte
+	Body            map[string]any
+	Model           string
+	Stream          bool
 
 	TokenIDs          []int
 	MultimodalEntries []MultimodalEntry
 	// ECTransferParams is an ordered list (one entry per encode response).
-	// Each entry is a single-key map: mm_hash -> per-encoding transfer
-	// descriptor (peer_host, peer_port, size_bytes, nixl_agent_metadata_b64).
-	// Populated by EncodeStep when the EC connector is nixl; empty for
-	// shared_storage.
+	// Each entry is a single-key map: mm_hash -> opaque per-encoding transfer
+	// descriptor (see the ec.Connector interface doc for the descriptor shape).
+	// Populated by EncodeStep when the EC connector is ec-nixl; empty for
+	// ec-shared-storage.
 	ECTransferParams []map[string]any
 	KVTransferParams map[string]any
 
+	// ResponseWriter is used by decode steps to stream the final response to the client.
 	ResponseWriter http.ResponseWriter
-	Flusher        http.Flusher
 
 	StartTime time.Time
 }

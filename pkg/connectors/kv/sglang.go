@@ -1,12 +1,15 @@
 package kv
 
 import (
+	"context"
 	"os"
 	"strconv"
 
 	"github.com/google/uuid"
+	"sigs.k8s.io/controller-runtime/pkg/log"
+
 	"github.com/llm-d/coordinator/pkg/pipeline"
-	logutil "github.com/llm-d/llm-d-inference-scheduler/pkg/common/observability/logging"
+	logutil "github.com/llm-d/llm-d-router/pkg/common/observability/logging"
 )
 
 const (
@@ -34,21 +37,24 @@ type sglangKV struct{}
 
 func (sglangKV) Name() string { return SGLang }
 
-func (sglangKV) PreparePrefillKVParams(_ *pipeline.RequestContext) map[string]any {
+func (sglangKV) PreparePrefillKVParams(ctx context.Context, _ *pipeline.RequestContext) map[string]any {
 	params := map[string]any{
-		"do_remote_decode": true,
-		fieldBootstrapPort: sglangBootstrapPort,
-		fieldBootstrapRoom: uuid.NewString(),
+		"do_remote_decode":  true,
+		"do_remote_prefill": false,
+		fieldBootstrapPort:  sglangBootstrapPort,
+		fieldBootstrapRoom:  uuid.NewString(),
 	}
-	logger.V(logutil.TRACE).Info("preparing prefill kv params", "params", params)
+	log.FromContext(ctx).WithName(loggerName).V(logutil.TRACE).Info("preparing prefill kv params", "params", params)
 	return params
 }
 
-func (sglangKV) PrepareDecodeKVParams(reqCtx *pipeline.RequestContext) map[string]any {
+func (sglangKV) PrepareDecodeKVParams(ctx context.Context, reqCtx *pipeline.RequestContext) map[string]any {
 	out := make(map[string]any, len(reqCtx.KVTransferParams))
 	for k, v := range reqCtx.KVTransferParams {
 		out[k] = v
 	}
-	logger.V(logutil.TRACE).Info("preparing decode kv params", "params", out)
+	out["do_remote_decode"] = false
+	out["do_remote_prefill"] = true
+	log.FromContext(ctx).WithName(loggerName).V(logutil.TRACE).Info("preparing decode kv params", "params", out)
 	return out
 }

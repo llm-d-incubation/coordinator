@@ -3,9 +3,9 @@ SHELL := /usr/bin/env bash
 # Image registry + dev-environment image tags (single source of truth).
 include versions.mk
 
-# Export all dev-env image references so scripts/kind-dev-env.sh sees them.
-export IMAGE_REGISTRY COORDINATOR_TAG VLLM_SIMULATOR_TAG EPP_TAG SIDECAR_TAG UDS_TOKENIZER_TAG
-export COORDINATOR_IMAGE VLLM_IMAGE EPP_IMAGE SIDECAR_IMAGE UDS_TOKENIZER_IMAGE
+# Export all dev-env image references so the e2e suite sees them.
+export IMAGE_REGISTRY COORDINATOR_TAG VLLM_SIMULATOR_TAG EPP_TAG
+export COORDINATOR_IMAGE VLLM_IMAGE VLLM_RENDER_IMAGE EPP_IMAGE
 
 # Defaults
 TARGETOS ?= $(shell command -v go >/dev/null 2>&1 && go env GOOS || uname -s | tr '[:upper:]' '[:lower:]')
@@ -130,6 +130,10 @@ test-unit: image-build-builder
 	@printf "\033[33;1m==== Running Unit Tests ====\033[0m\n"
 	$(BUILDER_RUN) "go test -v -race $(TEST_PACKAGES)"
 
+.PHONY: test-e2e-coordinator
+test-e2e-coordinator: image-build-coordinator image-build-epp image-build-builder image-pull ## Run coordinator e2e tests against a new kind cluster
+	test/scripts/run_e2e_coordinator.sh
+
 .PHONY: build
 build: image-build-builder ## Build the coordinator binary
 	@printf "\033[33;1m==== Building coordinator ====\033[0m\n"
@@ -182,14 +186,8 @@ image-build-builder: check-container-tool ## Build builder image if missing loca
 image-build-epp: ## Clone llm-d-inference-scheduler at pinned commit and build EPP image
 	scripts/build-epp-image.sh
 
-##@ Kind Development Environment
+.PHONY: image-pull
+image-pull: check-container-tool ## Pull all related images using $(CONTAINER_RUNTIME)
+	@printf "\033[33;1m==== Pulling Container images ====\033[0m\n"
+	./scripts/pull_images.sh
 
-.PHONY: env-dev-kind
-env-dev-kind: image-build-epp ## Deploy dev environment on a local Kind cluster (DISAGG_TOPOLOGY=pd|epd, default: pd)
-	scripts/kind-dev-env.sh
-
-.PHONY: clean-env-dev-kind
-clean-env-dev-kind: ## Delete the Kind dev cluster
-	kind delete cluster --name llm-d-coordinator-dev
-
-# Made with Bob

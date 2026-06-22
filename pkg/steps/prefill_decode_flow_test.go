@@ -9,13 +9,9 @@ import (
 	"testing"
 
 	"github.com/llm-d/coordinator/pkg/config"
+	"github.com/llm-d/coordinator/pkg/connectors/kv"
 	"github.com/llm-d/coordinator/pkg/gateway"
 	"github.com/llm-d/coordinator/pkg/pipeline"
-)
-
-const (
-	prefillPath = "/prefill/inference/v1/generate"
-	decodePath  = "/decode/v1/chat/completions"
 )
 
 func TestKVTransferParams_FlowFromPrefillToDecode(t *testing.T) {
@@ -28,13 +24,14 @@ func TestKVTransferParams_FlowFromPrefillToDecode(t *testing.T) {
 	var decodeReceivedKVParams map[string]any
 
 	gwServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case prefillPath:
+		phase := r.Header.Get(gateway.EPPPhaseHeader)
+		switch phase {
+		case gateway.PhasePrefill:
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"kv_transfer_params": expectedKVParams,
 			})
 
-		case decodePath:
+		case gateway.PhaseDecode:
 			body, _ := io.ReadAll(r.Body)
 			var parsed map[string]any
 			_ = json.Unmarshal(body, &parsed)
@@ -55,12 +52,12 @@ func TestKVTransferParams_FlowFromPrefillToDecode(t *testing.T) {
 	gwClient := gateway.New(config.GatewayConfig{Address: gwServer.URL})
 
 	// Run prefill step
-	prefillStep, _ := NewPrefillStep(map[string]any{"gateway_path": gateway.DefaultGeneratePath})
+	prefillStep, _ := NewPrefillStep(map[string]any{ParamKVConnector: kv.NIXL})
 	prefillStep.(*PrefillStep).SetGatewayClient(gwClient)
 
 	reqCtx := &pipeline.RequestContext{
 		RequestID:    "test-flow",
-		OriginalPath: "/v1/chat/completions",
+		OriginalPath: gateway.PathChatCompletions,
 		Model:        "llama-3",
 		Stream:       false,
 		TokenIDs:     []int{1, 32000, 32000, 32000, 2345},
@@ -98,12 +95,11 @@ func TestKVTransferParams_FlowFromPrefillToDecode(t *testing.T) {
 	}
 
 	// Run decode step
-	decodeStep, _ := NewDecodeStep(map[string]any{})
+	decodeStep, _ := NewDecodeStep(map[string]any{ParamKVConnector: kv.NIXL})
 	decodeStep.(*DecodeStep).SetGatewayClient(gwClient)
 
 	recorder := httptest.NewRecorder()
 	reqCtx.ResponseWriter = recorder
-	reqCtx.Flusher = recorder
 
 	err = decodeStep.Execute(context.Background(), reqCtx)
 	if err != nil {

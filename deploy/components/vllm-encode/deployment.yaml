@@ -3,24 +3,23 @@ kind: Deployment
 metadata:
   name: vllm-e
   labels:
-    app: ${ENCODE_POOL_NAME}
+    app: ${POOL_NAME}
 spec:
   replicas: ${VLLM_REPLICA_COUNT_E}
   selector:
     matchLabels:
-      app: ${ENCODE_POOL_NAME}
+      app: ${POOL_NAME}
       llm-d.ai/component: encode
   template:
     metadata:
       labels:
-        app: ${ENCODE_POOL_NAME}
+        app: ${POOL_NAME}
         llm-d.ai/component: encode
         llm-d.ai/role: encode
     spec:
+      initContainers: []
       containers:
       - name: vllm
-        # VLLM_IMAGE can be a simulator (e.g. llm-d-inference-sim) or a real
-        # vLLM image (e.g. vllm/vllm-openai:v0.16.0)
         image: ${VLLM_IMAGE}
         imagePullPolicy: IfNotPresent
         args:
@@ -33,27 +32,6 @@ spec:
         ports:
         - name: encode-http
           containerPort: 8000
-          protocol: TCP
-        - name: encode-rank1
-          containerPort: 8001
-          protocol: TCP
-        - name: encode-rank2
-          containerPort: 8002
-          protocol: TCP
-        - name: encode-rank3
-          containerPort: 8003
-          protocol: TCP
-        - name: encode-rank4
-          containerPort: 8004
-          protocol: TCP
-        - name: encode-rank5
-          containerPort: 8005
-          protocol: TCP
-        - name: encode-rank6
-          containerPort: 8006
-          protocol: TCP
-        - name: encode-rank7
-          containerPort: 8007
           protocol: TCP
         startupProbe:
           httpGet:
@@ -91,3 +69,4 @@ spec:
               fieldPath: metadata.namespace
       restartPolicy: Always
       terminationGracePeriodSeconds: 30
+      volumes: []

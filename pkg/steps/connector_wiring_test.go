@@ -16,16 +16,16 @@ import (
 
 // TestPrefillStep_ConnectorShapesPrefillBody verifies that the connector
 // selected via params controls the kv_transfer_params shape on the prefill
-// request. nixlv2 emits the full 6-field map (remote_* keys set to nil);
-// shared_storage emits only do_remote_decode.
+// request. In generate format, kv_transfer_params lives inside
+// sampling_params.extra_args due to the vLLM workaround.
 func TestPrefillStep_ConnectorShapesPrefillBody(t *testing.T) {
 	cases := []struct {
 		connector  string
-		wantFields map[string]any // key → expected value (nil means key must exist with nil value)
-		denyFields []string       // must NOT be present
+		wantFields map[string]any
+		denyFields []string
 	}{
 		{
-			connector: kv.NIXLv2,
+			connector: kv.NIXL,
 			wantFields: map[string]any{
 				"do_remote_decode":  true,
 				"do_remote_prefill": false,
@@ -37,7 +37,7 @@ func TestPrefillStep_ConnectorShapesPrefillBody(t *testing.T) {
 		},
 		{
 			connector:  kv.SharedStorage,
-			wantFields: map[string]any{"do_remote_decode": true},
+			wantFields: map[string]any{"do_remote_decode": true, "do_remote_prefill": false},
 			denyFields: []string{"remote_engine_id", "remote_host", "remote_block_ids", "remote_port"},
 		},
 	}
@@ -49,15 +49,18 @@ func TestPrefillStep_ConnectorShapesPrefillBody(t *testing.T) {
 				body, _ := io.ReadAll(r.Body)
 				var parsed map[string]any
 				_ = json.Unmarshal(body, &parsed)
-				captured, _ = parsed["kv_transfer_params"].(map[string]any)
+				// In generate format, kv_transfer_params is in sampling_params.extra_args
+				samplingParams, _ := parsed["sampling_params"].(map[string]any)
+				extraArgs, _ := samplingParams["extra_args"].(map[string]any)
+				captured, _ = extraArgs["kv_transfer_params"].(map[string]any)
 				_ = json.NewEncoder(w).Encode(map[string]any{"kv_transfer_params": map[string]any{}})
 			}))
 			defer srv.Close()
 
 			gwClient := gateway.New(config.GatewayConfig{Address: srv.URL})
 			step, err := NewPrefillStep(map[string]any{
-				"gateway_path":   gateway.DefaultGeneratePath,
-				ParamKVConnector: tc.connector,
+				"use_openai_format": false,
+				ParamKVConnector:    tc.connector,
 			})
 			if err != nil {
 				t.Fatalf("NewPrefillStep: %v", err)
@@ -75,7 +78,7 @@ func TestPrefillStep_ConnectorShapesPrefillBody(t *testing.T) {
 			}
 
 			if captured == nil {
-				t.Fatal("kv_transfer_params not sent to gateway")
+				t.Fatal("kv_transfer_params not found in sampling_params.extra_args")
 			}
 			for f, want := range tc.wantFields {
 				got, ok := captured[f]
@@ -97,26 +100,47 @@ func TestPrefillStep_ConnectorShapesPrefillBody(t *testing.T) {
 }
 
 // TestDecodeStep_ConnectorShapesDecodeBody verifies the per-connector
-// kv_transfer_params shape sent on the decode request. nixlv2 forwards the
-// prefill response verbatim plus do_remote_prefill: true; the others emit
-// only do_remote_prefill: true.
+// kv_transfer_params shape sent on the decode request. kv-nixl forwards all
+// prefill response fields and overrides do_remote_decode/do_remote_prefill;
+// kv-shared-storage emits only the two flags.
 func TestDecodeStep_ConnectorShapesDecodeBody(t *testing.T) {
+	// nixlPrefillResponse simulates the kv_transfer_params returned by a
+	// nixl prefill worker (remote addressing fields filled in).
+	nixlPrefillResponse := map[string]any{
+		"do_remote_decode":  true,
+		"do_remote_prefill": false,
+		"remote_engine_id":  "e95b1c63-2ba6-4f26-96d0-9338d40a2560",
+		"remote_block_ids":  []any{[]any{float64(1)}},
+		"remote_request_id": "generate-tokens-550e8400-e29b-41d4-a716-446655440000",
+		"remote_host":       "10.130.5.242",
+		"remote_port":       float64(5557),
+		"tp_size":           float64(2),
+	}
+
 	cases := []struct {
-		connector  string
-		wantFields map[string]any
-		denyFields []string
+		connector       string
+		prefillResponse map[string]any
+		wantFields      map[string]any
+		denyFields      []string
 	}{
 		{
-			connector: kv.NIXLv2,
+			connector:       kv.NIXL,
+			prefillResponse: nixlPrefillResponse,
 			wantFields: map[string]any{
+				"do_remote_decode":  false,
 				"do_remote_prefill": true,
-				"block_id":          "from-prefill",
+				"remote_engine_id":  "e95b1c63-2ba6-4f26-96d0-9338d40a2560",
+				"remote_request_id": "generate-tokens-550e8400-e29b-41d4-a716-446655440000",
+				"remote_host":       "10.130.5.242",
+				"remote_port":       float64(5557),
+				"tp_size":           float64(2),
 			},
 		},
 		{
-			connector:  kv.SharedStorage,
-			wantFields: map[string]any{"do_remote_prefill": true},
-			denyFields: []string{"block_id"},
+			connector:       kv.SharedStorage,
+			prefillResponse: map[string]any{"ignored": "field"},
+			wantFields:      map[string]any{"do_remote_decode": false, "do_remote_prefill": true},
+			denyFields:      []string{"remote_engine_id", "remote_host", "remote_block_ids", "remote_port", "ignored"},
 		},
 	}
 
@@ -144,12 +168,11 @@ func TestDecodeStep_ConnectorShapesDecodeBody(t *testing.T) {
 			recorder := httptest.NewRecorder()
 			reqCtx := &pipeline.RequestContext{
 				RequestID:        "req",
-				OriginalPath:     "/v1/chat/completions",
+				OriginalPath:     gateway.PathChatCompletions,
 				Model:            "m",
-				KVTransferParams: map[string]any{"block_id": "from-prefill"},
+				KVTransferParams: tc.prefillResponse,
 				Body:             map[string]any{"model": "m"},
 				ResponseWriter:   recorder,
-				Flusher:          recorder,
 			}
 			if err := step.Execute(context.Background(), reqCtx); err != nil {
 				t.Fatalf("Execute: %v", err)

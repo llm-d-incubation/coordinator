@@ -8,12 +8,14 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	logutil "github.com/llm-d/llm-d-inference-scheduler/pkg/common/observability/logging"
+	logutil "github.com/llm-d/llm-d-router/pkg/common/observability/logging"
 
+	"github.com/llm-d/coordinator/pkg/common/httplog"
 	"github.com/llm-d/coordinator/pkg/config"
 )
 
@@ -57,14 +59,16 @@ func (c *Client) Request(ctx context.Context, method, path string, body []byte, 
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(ContentTypeHeader, ContentTypeJSON)
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
 
 	logger := log.FromContext(ctx).WithName("gateway")
 	if body != nil {
-		logger.V(logutil.TRACE).Info("request body", "method", method, "path", path, "body", redactBody(body))
+		if v := logger.V(logutil.TRACE); v.Enabled() {
+			v.Info("request body", "method", method, "path", path, "headers", httplog.RedactedHeaders(req.Header), "body", redactBody(body))
+		}
 	}
 
 	resp, err := c.httpClient.Do(req)
@@ -77,7 +81,9 @@ func (c *Client) Request(ctx context.Context, method, path string, body []byte, 
 	if err != nil {
 		return nil, fmt.Errorf("reading response from gateway: %w", err)
 	}
-	logger.V(logutil.TRACE).Info("response body", "status", resp.StatusCode, "body", redactBody(respBody))
+	if v := logger.V(logutil.TRACE); v.Enabled() {
+		v.Info("response body", "status", resp.StatusCode, "body", redactBody(respBody))
+	}
 	resp.Body = io.NopCloser(bytes.NewReader(respBody))
 
 	return resp, nil
@@ -86,6 +92,16 @@ func (c *Client) Request(ctx context.Context, method, path string, body []byte, 
 // Post is a convenience method for POST requests.
 func (c *Client) Post(ctx context.Context, path string, body []byte, headers map[string]string) (*http.Response, error) {
 	return c.Request(ctx, http.MethodPost, path, body, headers)
+}
+
+// BaseURL returns the gateway base URL (e.g. "http://envoy-gateway:80").
+func (c *Client) BaseURL() string {
+	return c.baseURL
+}
+
+// Transport returns the underlying HTTP transport for reuse by reverse proxies.
+func (c *Client) Transport() http.RoundTripper {
+	return c.httpClient.Transport
 }
 
 // redactBody parses JSON and replaces string values longer than 50 chars with
@@ -105,6 +121,12 @@ func redactStrings(v any) any {
 	switch val := v.(type) {
 	case string:
 		if len(val) > 50 {
+			if strings.HasPrefix(val, "data:") {
+				return "[base64]"
+			}
+			if strings.HasPrefix(val, "http://") || strings.HasPrefix(val, "https://") {
+				return "[url]"
+			}
 			return "..."
 		}
 		return val
