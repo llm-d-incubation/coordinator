@@ -14,6 +14,60 @@ import (
 	"github.com/llm-d/coordinator/pkg/pipeline"
 )
 
+// TestECTransferParams_NotForwardedToDecodeBackend verifies that ec_transfer_params
+// accumulated by the encode step are never included in the decode request body.
+// The prefill step uses a copy of reqCtx.Body, so it cannot contaminate the shared
+// body map; this test guards against regressions where that isolation breaks.
+func TestECTransferParams_NotForwardedToDecodeBackend(t *testing.T) {
+	var decodeBody map[string]any
+
+	gwServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get(gateway.EPPPhaseHeader) == gateway.PhaseDecode {
+			raw, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(raw, &decodeBody)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]any{"role": "assistant", "content": "ok"}},
+			},
+		})
+	}))
+	defer gwServer.Close()
+
+	gwClient := gateway.New(config.GatewayConfig{Address: gwServer.URL})
+	decodeStep, _ := NewDecodeStep(map[string]any{ParamKVConnector: kv.NIXL})
+	decodeStep.(*DecodeStep).SetGatewayClient(gwClient)
+
+	reqCtx := &pipeline.RequestContext{
+		RequestID:    "test-no-ec",
+		OriginalPath: gateway.PathChatCompletions,
+		Model:        "llama-3",
+		Stream:       false,
+		// Simulate encode step having populated ECTransferParams.
+		ECTransferParams: []map[string]any{
+			{"img-hash-1": map[string]any{"peer_host": "10.0.0.5", "peer_port": float64(5500)}},
+		},
+		KVTransferParams: map[string]any{"block_id": "blk-1"},
+		Body: map[string]any{
+			"model":    "llama-3",
+			"messages": []any{map[string]any{"role": "user", "content": "hello"}},
+		},
+	}
+
+	recorder := httptest.NewRecorder()
+	reqCtx.ResponseWriter = recorder
+
+	if err := decodeStep.Execute(context.Background(), reqCtx); err != nil {
+		t.Fatalf("decode failed: %v", err)
+	}
+	if decodeBody == nil {
+		t.Fatal("decode step did not reach the backend")
+	}
+	if _, present := decodeBody["ec_transfer_params"]; present {
+		t.Errorf("ec_transfer_params must not be forwarded to the decode backend, got: %v", decodeBody["ec_transfer_params"])
+	}
+}
+
 func TestKVTransferParams_FlowFromPrefillToDecode(t *testing.T) {
 	expectedKVParams := map[string]any{
 		"block_id":  "block-999",
