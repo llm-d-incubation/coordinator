@@ -2,7 +2,6 @@ package pipeline_test
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -32,12 +31,6 @@ func TestFullPipeline_AllConnectorCombinations(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.kvConnector+"+"+tc.ecConnector, func(t *testing.T) {
-			imageServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", "image/png")
-				_, _ = w.Write([]byte("fake-image-data"))
-			}))
-			defer imageServer.Close()
-
 			renderServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				_ = json.NewEncoder(w).Encode(map[string]any{
 					"token_ids": []int{1, 32000, 32000, 32000, 2345, 6789},
@@ -122,13 +115,13 @@ func TestFullPipeline_AllConnectorCombinations(t *testing.T) {
 				pipelineSteps = append(pipelineSteps, step)
 			}
 
-			requestBody := fmt.Sprintf(`{
+			requestBody := `{
 				"model": "test-model", "stream": false,
 				"messages": [{"role": "user", "content": [
 					{"type": "text", "text": "What is in this image?"},
-					{"type": "image_url", "image_url": {"url": "%s/image.png"}}
+					{"type": "image_url", "image_url": {"url": "data:image/png;base64,ZmFrZS1pbWFnZS1kYXRh"}}
 				]}]
-			}`, imageServer.URL)
+			}`
 
 			recorder := httptest.NewRecorder()
 			reqCtx := &pipeline.RequestContext{
@@ -181,12 +174,6 @@ func TestFullPipeline_AllConnectorCombinations(t *testing.T) {
 }
 
 func TestFullPipeline_Integration(t *testing.T) {
-	imageServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "image/png")
-		_, _ = w.Write([]byte("fake-image-data"))
-	}))
-	defer imageServer.Close()
-
 	renderServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"token_ids": []int{1, 32000, 32000, 32000, 2345, 6789},
@@ -268,7 +255,7 @@ func TestFullPipeline_Integration(t *testing.T) {
 
 	p := pipeline.New(pipelineSteps)
 
-	requestBody := fmt.Sprintf(`{
+	requestBody := `{
 		"model": "test-model",
 		"stream": false,
 		"messages": [
@@ -276,11 +263,11 @@ func TestFullPipeline_Integration(t *testing.T) {
 				"role": "user",
 				"content": [
 					{"type": "text", "text": "What is in this image?"},
-					{"type": "image_url", "image_url": {"url": "%s/image.png"}}
+					{"type": "image_url", "image_url": {"url": "data:image/png;base64,ZmFrZS1pbWFnZS1kYXRh"}}
 				]
 			}
 		]
-	}`, imageServer.URL)
+	}`
 
 	recorder := httptest.NewRecorder()
 	reqCtx := &pipeline.RequestContext{

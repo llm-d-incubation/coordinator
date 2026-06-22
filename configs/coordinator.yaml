@@ -95,6 +95,23 @@ pipeline:
         # 0 (or omitted) = unlimited.
         # max_multimodal_entries: 8
 
+        # allow_private_networks permits downloads whose resolved IP falls in
+        # an RFC1918 private range (10/8, 172.16/12, 192.168/16). Loopback,
+        # link-local (including the 169.254.169.254 cloud metadata endpoint),
+        # CGNAT, and unique-local addresses stay blocked regardless. Enable
+        # only when image origins are inside the cluster network.
+        # Default false.
+        # allow_private_networks: false
+
+        # allowed_domains restricts downloads to an explicit set of hostnames.
+        # When omitted or empty, any host that passes the IP checks above is
+        # allowed. This is an ADDITIONAL filter, not a replacement: a host in
+        # this list is still subject to the IP blocks, so listing "localhost"
+        # or an internal hostname does NOT make it reachable unless the
+        # resolved IP is also permitted (see allow_private_networks).
+        # allowed_domains:
+        #   - images.example.com
+
     # -------------------------------------------------------------------
     # render: tokenizes the request via the rendering service and (for
     # chat-completions multimodal) populates each MultimodalEntry's Hash,
