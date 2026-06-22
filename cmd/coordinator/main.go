@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"errors"
-	"flag"
+	"github.com/spf13/pflag"
 	"net/http"
 	"os"
 	"os/signal"
@@ -21,8 +21,8 @@ import (
 )
 
 func main() {
-	configPath := flag.String("config", "configs/coordinator.yaml", "path to configuration file")
-	flag.Parse()
+	configPath := pflag.String("config", "configs/coordinator.yaml", "path to configuration file")
+	pflag.Parse()
 
 	logutil.InitSetupLogging()
 	log := ctrl.Log.WithName("coordinator")
@@ -46,21 +46,28 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 
-	go func() {
-		<-ctx.Done()
-		stop()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.Server.ShutdownTimeout)
-		defer cancel()
-		if err := srv.Shutdown(shutdownCtx); err != nil {
-			log.Error(err, "shutdown error")
-		}
-	}()
+	srvErr := make(chan error, 1)
+	go func() { srvErr <- srv.ListenAndServe() }()
 
 	log.Info("starting coordinator", "addr", cfg.Server.ListenAddr)
 	log.Info("graceful shutdown enabled", "timeout", cfg.Server.ShutdownTimeout)
-	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
-		log.Error(err, "server error")
-		os.Exit(1)
+
+	select {
+	case err := <-srvErr:
+		stop()
+		if !errors.Is(err, http.ErrServerClosed) {
+			log.Error(err, "server error")
+			os.Exit(1)
+		}
+	case <-ctx.Done():
+		stop()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.Server.ShutdownTimeout)
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			cancel()
+			log.Error(err, "shutdown error")
+			os.Exit(1)
+		}
+		cancel()
 	}
 }
 

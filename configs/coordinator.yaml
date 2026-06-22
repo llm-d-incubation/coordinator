@@ -2,6 +2,7 @@ server:
   listen_addr: ":8080"
   read_timeout: 30s
   write_timeout: 120s
+  # Kubernetes terminationGracePeriodSeconds must exceed shutdown_timeout; SSE streams held open for up to write_timeout are force-closed once the grace period expires.
   shutdown_timeout: 25s
 
 gateway:

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"net"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -40,6 +41,10 @@ func New(cfg config.ServerConfig, p *pipeline.Pipeline) *Server {
 
 func (s *Server) ListenAndServe() error {
 	return s.httpServer.ListenAndServe()
+}
+
+func (s *Server) Serve(l net.Listener) error {
+	return s.httpServer.Serve(l)
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {
