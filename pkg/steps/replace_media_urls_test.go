@@ -720,7 +720,9 @@ func TestAddressGuard_AllowPrivate(t *testing.T) {
 		}
 	}
 	// ...but the metadata endpoint and other special ranges stay blocked.
-	for _, ip := range []string{"169.254.169.254", "127.0.0.1", "0.0.0.0", "100.64.1.1"} {
+	// allowPrivate is RFC1918-only: IPv6 unique-local (fc00::/7) must not leak
+	// through, even though net.IP.IsPrivate treats it as private.
+	for _, ip := range []string{"169.254.169.254", "127.0.0.1", "0.0.0.0", "100.64.1.1", "fc00::1"} {
 		if !guard.blockedIP(net.ParseIP(ip)) {
 			t.Errorf("blockedIP(%s) = false, want true even with allowPrivate", ip)
 		}
@@ -855,5 +857,30 @@ func TestReplaceMediaURLsStep_RejectsNonStringAllowedDomain(t *testing.T) {
 	_, err := NewReplaceMediaURLsStep(map[string]any{"allowed_domains": []any{123}})
 	if err == nil {
 		t.Fatal("expected error for non-string allowed_domains entry")
+	}
+}
+
+// A list arriving as []string (a programmatic caller, not the YAML path) must
+// build the allowlist, not silently fall back to allow-all.
+func TestReplaceMediaURLsStep_AllowedDomainsStringSlice(t *testing.T) {
+	step, err := NewReplaceMediaURLsStep(map[string]any{"allowed_domains": []string{"images.example.com"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	guard := step.(*ReplaceMediaURLsStep).guard
+	if guard.hostAllowed("evil.example.com") {
+		t.Fatal("allowlist must reject unlisted host")
+	}
+	if !guard.hostAllowed("images.example.com") {
+		t.Fatal("allowlist must permit listed host")
+	}
+}
+
+// An allowed_domains value of an unsupported type must error, not silently
+// disable the allowlist.
+func TestReplaceMediaURLsStep_RejectsNonListAllowedDomains(t *testing.T) {
+	_, err := NewReplaceMediaURLsStep(map[string]any{"allowed_domains": "images.example.com"})
+	if err == nil {
+		t.Fatal("expected error for non-list allowed_domains")
 	}
 }

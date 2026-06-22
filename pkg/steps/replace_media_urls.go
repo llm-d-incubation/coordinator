@@ -69,15 +69,12 @@ func NewReplaceMediaURLsStep(params map[string]any) (pipeline.Step, error) {
 	if v, ok := params["allow_private_networks"].(bool); ok {
 		guard.allowPrivate = v
 	}
-	if v, ok := params["allowed_domains"].([]any); ok {
-		guard.allowedDomains = make(map[string]struct{}, len(v))
-		for _, d := range v {
-			host, ok := d.(string)
-			if !ok {
-				return nil, fmt.Errorf("allowed_domains entries must be strings, got %T", d)
-			}
-			guard.allowedDomains[strings.ToLower(host)] = struct{}{}
+	if raw, present := params["allowed_domains"]; present {
+		domains, err := parseAllowedDomains(raw)
+		if err != nil {
+			return nil, err
 		}
+		guard.allowedDomains = domains
 	}
 
 	step := &ReplaceMediaURLsStep{
@@ -348,7 +345,13 @@ func (g *addressGuard) blockedIP(ip net.IP) bool {
 		return true
 	}
 	if ip.IsPrivate() {
-		return !g.allowPrivate
+		// IsPrivate covers RFC1918 (IPv4) and unique-local fc00::/7 (IPv6).
+		// Only RFC1918 is configurable; unique-local is never a valid image
+		// origin and stays blocked even when allowPrivate is set.
+		if ip.To4() != nil {
+			return !g.allowPrivate
+		}
+		return true
 	}
 	return false
 }
@@ -359,4 +362,33 @@ func (g *addressGuard) hostAllowed(host string) bool {
 	}
 	_, ok := g.allowedDomains[strings.ToLower(host)]
 	return ok
+}
+
+// parseAllowedDomains accepts a list of hostnames as either []any (the YAML
+// decode path) or []string (programmatic callers). It returns an error on any
+// other type rather than silently disabling the allowlist, which would be an
+// open-by-default downgrade of a security control.
+func parseAllowedDomains(raw any) (map[string]struct{}, error) {
+	var entries []any
+	switch v := raw.(type) {
+	case []any:
+		entries = v
+	case []string:
+		entries = make([]any, len(v))
+		for i, s := range v {
+			entries[i] = s
+		}
+	default:
+		return nil, fmt.Errorf("allowed_domains must be a list of strings, got %T", raw)
+	}
+
+	domains := make(map[string]struct{}, len(entries))
+	for _, e := range entries {
+		host, ok := e.(string)
+		if !ok {
+			return nil, fmt.Errorf("allowed_domains entries must be strings, got %T", e)
+		}
+		domains[strings.ToLower(host)] = struct{}{}
+	}
+	return domains, nil
 }
