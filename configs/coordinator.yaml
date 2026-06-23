@@ -95,6 +95,14 @@ pipeline:
         # 0 (or omitted) = unlimited.
         # max_multimodal_entries: 8
 
+        # max_download_size caps the bytes read per image download. A response
+        # whose Content-Length or body exceeds the cap is rejected as a client
+        # error (4xx). Bounds peak memory together with the two limits above:
+        # roughly max_concurrent_downloads x max_download_size x ~2.3. Bytes;
+        # default 10485760 (10 MB). data: URIs do not hit the network and are
+        # unaffected.
+        # max_download_size: 10485760
+
         # allow_private_networks permits downloads whose resolved IP falls in
         # an RFC1918 private range (10/8, 172.16/12, 192.168/16). Loopback,
         # link-local (including the 169.254.169.254 cloud metadata endpoint),
