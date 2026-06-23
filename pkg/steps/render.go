@@ -34,16 +34,18 @@ type RenderStep struct {
 
 func NewRenderStep(params map[string]any) (pipeline.Step, error) {
 	timeout := 30 * time.Second
-	if v, ok := params["timeout"].(string); ok {
-		if d, err := time.ParseDuration(v); err == nil {
-			timeout = d
-		}
+	if v, ok, err := paramDuration(params, "timeout"); err != nil {
+		return nil, err
+	} else if ok {
+		timeout = v
 	}
 
 	address, _ := params["address"].(string)
 
 	maxTokens := 0
-	if v, ok := params["max_total_tokens"].(int); ok {
+	if v, ok, err := paramInt(params, "max_total_tokens"); err != nil {
+		return nil, err
+	} else if ok {
 		if v < 0 {
 			return nil, fmt.Errorf("max_total_tokens must be non-negative, got %d", v)
 		}
@@ -51,7 +53,9 @@ func NewRenderStep(params map[string]any) (pipeline.Step, error) {
 	}
 
 	maxPlaceholders := 0
-	if v, ok := params["max_total_placeholder_tokens"].(int); ok {
+	if v, ok, err := paramInt(params, "max_total_placeholder_tokens"); err != nil {
+		return nil, err
+	} else if ok {
 		if v < 0 {
 			return nil, fmt.Errorf("max_total_placeholder_tokens must be non-negative, got %d", v)
 		}
