@@ -18,8 +18,8 @@ func writeConfig(t *testing.T, body string) string {
 }
 
 func TestLoadDefaults(t *testing.T) {
-	// A near-empty file: every assertion below comes from SetDefault, not YAML.
-	cfg, err := Load(writeConfig(t, "log_level: 2\n"))
+	// An empty file: every assertion below comes from SetDefault, not YAML.
+	cfg, err := Load(writeConfig(t, ""))
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -128,6 +128,9 @@ pipeline:
 	// A step with no params block decodes to a nil/empty map, not an error.
 	if cfg.Pipeline.Steps[1].Type != "prefill" {
 		t.Errorf("step[1].type = %q, want prefill", cfg.Pipeline.Steps[1].Type)
+	}
+	if len(cfg.Pipeline.Steps[1].Params) != 0 {
+		t.Errorf("step[1].params = %#v, want empty", cfg.Pipeline.Steps[1].Params)
 	}
 }
 
