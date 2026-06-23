@@ -32,6 +32,10 @@ type PipelineConfig struct {
 	ECConnector     string       `mapstructure:"ec_connector"`
 	UseOpenAIFormat bool         `mapstructure:"use_openai_format"`
 	Steps           []StepConfig `mapstructure:"steps"`
+	// MaxBatchSize caps prompts per batched request; 0 = unbounded (still bounded by body size).
+	MaxBatchSize int `mapstructure:"max_batch_size"`
+	// MaxBatchConcurrency bounds concurrent children per batched request.
+	MaxBatchConcurrency int `mapstructure:"max_batch_concurrency"`
 }
 
 type StepConfig struct {
@@ -49,6 +53,7 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("server.listen_addr", ":8080")
 	v.SetDefault("server.read_timeout", 30*time.Second)
 	v.SetDefault("server.write_timeout", 120*time.Second)
+	v.SetDefault("pipeline.max_batch_concurrency", 8)
 	v.SetDefault("gateway.max_idle_conns_per_host", 100)
 	v.SetDefault("gateway.idle_conn_timeout", 90*time.Second)
 	v.SetDefault("gateway.timeout", 60*time.Second)

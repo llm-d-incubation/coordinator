@@ -72,7 +72,7 @@ func (s *Server) handleInference(w http.ResponseWriter, r *http.Request) {
 	logger.V(logutil.DEFAULT).Info("received request", "path", r.URL.Path, "model", model, "stream", stream)
 
 	if err := s.pipeline.Execute(ctx, reqCtx); err != nil {
-		logger.Error(err, "pipeline execution failed")
+		logger.Error(err, "request execution failed")
 		status, msg := classifyPipelineError(err, reqCtx.RequestID)
 		http.Error(w, msg, status)
 	}
