@@ -3,6 +3,8 @@ package steps
 import (
 	"context"
 	"encoding/base64"
+	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,6 +14,20 @@ import (
 	"github.com/llm-d/coordinator/pkg/pipeline"
 )
 
+// newLoopbackStep builds a step whose SSRF guard permits loopback. httptest
+// servers bind to 127.0.0.1, which the guard blocks by default, so download
+// tests that talk to a local server must opt loopback back in.
+func newLoopbackStep(t *testing.T, params map[string]any) *ReplaceMediaURLsStep {
+	t.Helper()
+	step, err := NewReplaceMediaURLsStep(params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rmu := step.(*ReplaceMediaURLsStep)
+	rmu.guard.allowLoopback = true
+	return rmu
+}
+
 func TestReplaceMediaURLsStep_DownloadsAndInlines(t *testing.T) {
 	imageServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/jpeg")
@@ -19,10 +35,7 @@ func TestReplaceMediaURLsStep_DownloadsAndInlines(t *testing.T) {
 	}))
 	defer imageServer.Close()
 
-	step, err := NewReplaceMediaURLsStep(map[string]any{"download_timeout": "5s"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	step := newLoopbackStep(t, map[string]any{"download_timeout": "5s"})
 
 	reqCtx := &pipeline.RequestContext{
 		Body: map[string]any{
@@ -41,7 +54,7 @@ func TestReplaceMediaURLsStep_DownloadsAndInlines(t *testing.T) {
 		},
 	}
 
-	err = step.Execute(context.Background(), reqCtx)
+	err := step.Execute(context.Background(), reqCtx)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -206,7 +219,7 @@ func TestReplaceMediaURLsStep_MixedHTTPAndDataURIOrdering(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			step, _ := NewReplaceMediaURLsStep(map[string]any{})
+			step := newLoopbackStep(t, map[string]any{})
 			reqCtx := &pipeline.RequestContext{
 				Body: map[string]any{
 					"messages": []any{
@@ -362,7 +375,7 @@ func TestReplaceMediaURLsStep_AllowsAtLimit(t *testing.T) {
 	}))
 	defer imageServer.Close()
 
-	step, _ := NewReplaceMediaURLsStep(map[string]any{"max_multimodal_entries": 2})
+	step := newLoopbackStep(t, map[string]any{"max_multimodal_entries": 2})
 
 	reqCtx := &pipeline.RequestContext{
 		Body: map[string]any{
@@ -393,7 +406,7 @@ func TestReplaceMediaURLsStep_MultipleImages(t *testing.T) {
 	}))
 	defer imageServer.Close()
 
-	step, _ := NewReplaceMediaURLsStep(map[string]any{})
+	step := newLoopbackStep(t, map[string]any{})
 
 	reqCtx := &pipeline.RequestContext{
 		Body: map[string]any{
@@ -544,7 +557,7 @@ func TestReplaceMediaURLsStep_EmptyContentType(t *testing.T) {
 	}))
 	defer imageServer.Close()
 
-	step, _ := NewReplaceMediaURLsStep(map[string]any{})
+	step := newLoopbackStep(t, map[string]any{})
 	reqCtx := &pipeline.RequestContext{
 		Body: map[string]any{
 			"messages": []any{
@@ -576,7 +589,7 @@ func TestReplaceMediaURLsStep_DownloadUnreachable(t *testing.T) {
 	deadURL := imageServer.URL + "/gone.png"
 	imageServer.Close() // nothing is listening on this address now
 
-	step, _ := NewReplaceMediaURLsStep(map[string]any{})
+	step := newLoopbackStep(t, map[string]any{})
 	reqCtx := &pipeline.RequestContext{
 		Body: map[string]any{
 			"messages": []any{
@@ -601,13 +614,13 @@ func TestReplaceMediaURLsStep_DownloadUnreachable(t *testing.T) {
 	}
 }
 
-// Structural guard, not a behavioral proxy test. The downloader must leave
-// http.Client.Transport nil so it uses http.DefaultTransport, whose Proxy is
-// http.ProxyFromEnvironment. That is the only reason image fetches honor
-// HTTP_PROXY/HTTPS_PROXY. A custom transport without a Proxy field (as in
+// Structural guard, not a behavioral proxy test. The SSRF dial guard requires a
+// custom transport, so the downloader clones http.DefaultTransport to retain
+// its Proxy: http.ProxyFromEnvironment. That is the only reason image fetches
+// honor HTTP_PROXY/HTTPS_PROXY. A custom transport without a Proxy field (as in
 // pkg/gateway/client.go) would silently bypass the proxy; this test fails if
 // that regression is introduced here.
-func TestReplaceMediaURLsStep_ClientUsesDefaultTransport(t *testing.T) {
+func TestReplaceMediaURLsStep_ClientPreservesProxy(t *testing.T) {
 	step, err := NewReplaceMediaURLsStep(map[string]any{})
 	if err != nil {
 		t.Fatal(err)
@@ -616,8 +629,12 @@ func TestReplaceMediaURLsStep_ClientUsesDefaultTransport(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected *ReplaceMediaURLsStep, got %T", step)
 	}
-	if rmu.client.Transport != nil {
-		t.Fatal("downloader client.Transport must be nil so http.DefaultTransport (Proxy: ProxyFromEnvironment) is used")
+	transport, ok := rmu.client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("expected *http.Transport, got %T", rmu.client.Transport)
+	}
+	if transport.Proxy == nil {
+		t.Fatal("downloader transport must keep Proxy (http.ProxyFromEnvironment) so HTTP(S)_PROXY is honored")
 	}
 }
 
@@ -650,11 +667,220 @@ func TestReplaceMediaURLsStep_DownloadTruncatedBody(t *testing.T) {
 	}))
 	defer imageServer.Close()
 
-	step, _ := NewReplaceMediaURLsStep(map[string]any{})
-	rmu := step.(*ReplaceMediaURLsStep)
+	rmu := newLoopbackStep(t, map[string]any{})
 
 	_, _, err := rmu.download(context.Background(), imageServer.URL+"/truncated")
 	if err == nil {
 		t.Fatal("expected error reading truncated response body")
+	}
+}
+
+func TestAddressGuard_BlockedIP(t *testing.T) {
+	tests := []struct {
+		name string
+		ip   string
+		want bool
+	}{
+		{"metadata link-local", "169.254.169.254", true},
+		{"loopback v4", "127.0.0.1", true},
+		{"loopback v6", "::1", true},
+		{"link-local v6", "fe80::1", true},
+		{"unspecified v4", "0.0.0.0", true},
+		{"unspecified v6", "::", true},
+		{"cgnat", "100.64.1.1", true},
+		{"private 10", "10.0.0.1", true},
+		{"private 172", "172.16.0.1", true},
+		{"private 192", "192.168.1.1", true},
+		{"unique-local v6", "fc00::1", true},
+		{"ipv4-mapped metadata", "::ffff:169.254.169.254", true},
+		{"ipv4-mapped private", "::ffff:10.0.0.1", true},
+		{"public v4", "8.8.8.8", false},
+		{"public v6", "2001:4860:4860::8888", false},
+	}
+	guard := &addressGuard{}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ip := net.ParseIP(tt.ip)
+			if ip == nil {
+				t.Fatalf("could not parse %q", tt.ip)
+			}
+			if got := guard.blockedIP(ip); got != tt.want {
+				t.Fatalf("blockedIP(%s) = %v, want %v", tt.ip, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAddressGuard_AllowPrivate(t *testing.T) {
+	guard := &addressGuard{allowPrivate: true}
+	// RFC1918 ranges are permitted when opted in...
+	for _, ip := range []string{"10.0.0.1", "172.16.0.1", "192.168.1.1"} {
+		if guard.blockedIP(net.ParseIP(ip)) {
+			t.Errorf("blockedIP(%s) = true, want false with allowPrivate", ip)
+		}
+	}
+	// ...but the metadata endpoint and other special ranges stay blocked.
+	// allowPrivate is RFC1918-only: IPv6 unique-local (fc00::/7) must not leak
+	// through, even though net.IP.IsPrivate treats it as private.
+	for _, ip := range []string{"169.254.169.254", "127.0.0.1", "0.0.0.0", "100.64.1.1", "fc00::1"} {
+		if !guard.blockedIP(net.ParseIP(ip)) {
+			t.Errorf("blockedIP(%s) = false, want true even with allowPrivate", ip)
+		}
+	}
+}
+
+func TestAddressGuard_HostAllowed(t *testing.T) {
+	open := &addressGuard{}
+	if !open.hostAllowed("anything.example.com") {
+		t.Fatal("empty allowlist must allow any host")
+	}
+
+	restricted := &addressGuard{allowedDomains: map[string]struct{}{"images.example.com": {}}}
+	if !restricted.hostAllowed("images.example.com") {
+		t.Fatal("listed host must be allowed")
+	}
+	if !restricted.hostAllowed("IMAGES.EXAMPLE.COM") {
+		t.Fatal("host match must be case-insensitive")
+	}
+	if restricted.hostAllowed("evil.example.com") {
+		t.Fatal("unlisted host must be rejected")
+	}
+}
+
+// download rejects non-http(s) schemes before any network call.
+func TestReplaceMediaURLsStep_RejectsScheme(t *testing.T) {
+	rmu := newLoopbackStep(t, map[string]any{})
+	for _, raw := range []string{"file:///etc/passwd", "gopher://host/1", "ftp://host/x"} {
+		_, _, err := rmu.download(context.Background(), raw)
+		if err == nil {
+			t.Fatalf("expected scheme %q to be rejected", raw)
+		}
+		if !errors.Is(err, pipeline.ErrBadRequest) {
+			t.Fatalf("scheme rejection must be a bad request, got %v", err)
+		}
+	}
+}
+
+// A dial to a blocked range surfaces as a client error (ErrBadRequest), not a
+// generic gateway fault, so the handler maps it to a 4xx.
+func TestReplaceMediaURLsStep_BlocksMetadataIP(t *testing.T) {
+	rmu := newLoopbackStep(t, map[string]any{"download_timeout": "2s"})
+	_, _, err := rmu.download(context.Background(), "http://169.254.169.254/latest/meta-data/")
+	if err == nil {
+		t.Fatal("expected metadata IP fetch to be blocked")
+	}
+	if !errors.Is(err, pipeline.ErrBadRequest) {
+		t.Fatalf("blocked address must classify as bad request, got %v", err)
+	}
+}
+
+// An allowed public host that 302-redirects to a blocked address is rejected at
+// the dial of the redirect hop.
+func TestReplaceMediaURLsStep_BlocksRedirectToPrivate(t *testing.T) {
+	redirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://169.254.169.254/latest/meta-data/", http.StatusFound)
+	}))
+	defer redirector.Close()
+
+	// Loopback allowed so the first hop (the httptest server) connects; the
+	// metadata redirect target is link-local and stays blocked regardless.
+	rmu := newLoopbackStep(t, map[string]any{"download_timeout": "2s"})
+	_, _, err := rmu.download(context.Background(), redirector.URL+"/start")
+	if err == nil {
+		t.Fatal("expected redirect to metadata IP to be blocked")
+	}
+	if !errors.Is(err, pipeline.ErrBadRequest) {
+		t.Fatalf("blocked redirect must classify as bad request, got %v", err)
+	}
+}
+
+// A hostname that resolves to a blocked IP is caught at dial time, defeating a
+// DNS-rebinding bypass. localhost resolves to loopback, blocked by default.
+func TestReplaceMediaURLsStep_BlocksHostnameResolvingToPrivate(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("data"))
+	}))
+	defer server.Close()
+
+	_, port, err := net.SplitHostPort(strings.TrimPrefix(server.URL, "http://"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Default guard: loopback blocked. "localhost" resolves to 127.0.0.1/::1.
+	built, err := NewReplaceMediaURLsStep(map[string]any{"download_timeout": "2s"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	step := built.(*ReplaceMediaURLsStep)
+	_, _, err = step.download(context.Background(), "http://localhost:"+port+"/x")
+	if err == nil {
+		t.Fatal("expected hostname resolving to loopback to be blocked")
+	}
+	if !errors.Is(err, pipeline.ErrBadRequest) {
+		t.Fatalf("blocked resolved host must classify as bad request, got %v", err)
+	}
+}
+
+// With a domain allowlist set, only listed hosts are fetched; others are
+// rejected before any connection.
+func TestReplaceMediaURLsStep_DomainAllowlist(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write([]byte("img"))
+	}))
+	defer server.Close()
+
+	host := strings.TrimPrefix(server.URL, "http://")
+	hostname, _, err := net.SplitHostPort(host)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	allowed := newLoopbackStep(t, map[string]any{"allowed_domains": []any{hostname}})
+	if _, _, err := allowed.download(context.Background(), server.URL+"/ok.png"); err != nil {
+		t.Fatalf("listed host must be fetchable: %v", err)
+	}
+
+	denied := newLoopbackStep(t, map[string]any{"allowed_domains": []any{"images.example.com"}})
+	_, _, err = denied.download(context.Background(), server.URL+"/ok.png")
+	if err == nil {
+		t.Fatal("unlisted host must be rejected")
+	}
+	if !errors.Is(err, pipeline.ErrBadRequest) {
+		t.Fatalf("allowlist rejection must classify as bad request, got %v", err)
+	}
+}
+
+// allowed_domains entries must be strings.
+func TestReplaceMediaURLsStep_RejectsNonStringAllowedDomain(t *testing.T) {
+	_, err := NewReplaceMediaURLsStep(map[string]any{"allowed_domains": []any{123}})
+	if err == nil {
+		t.Fatal("expected error for non-string allowed_domains entry")
+	}
+}
+
+// A list arriving as []string (a programmatic caller, not the YAML path) must
+// build the allowlist, not silently fall back to allow-all.
+func TestReplaceMediaURLsStep_AllowedDomainsStringSlice(t *testing.T) {
+	step, err := NewReplaceMediaURLsStep(map[string]any{"allowed_domains": []string{"images.example.com"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	guard := step.(*ReplaceMediaURLsStep).guard
+	if guard.hostAllowed("evil.example.com") {
+		t.Fatal("allowlist must reject unlisted host")
+	}
+	if !guard.hostAllowed("images.example.com") {
+		t.Fatal("allowlist must permit listed host")
+	}
+}
+
+// An allowed_domains value of an unsupported type must error, not silently
+// disable the allowlist.
+func TestReplaceMediaURLsStep_RejectsNonListAllowedDomains(t *testing.T) {
+	_, err := NewReplaceMediaURLsStep(map[string]any{"allowed_domains": "images.example.com"})
+	if err == nil {
+		t.Fatal("expected error for non-list allowed_domains")
 	}
 }

@@ -6,9 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
+	"syscall"
 	"time"
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -33,6 +36,7 @@ type ReplaceMediaURLsStep struct {
 	downloadTimeout        time.Duration
 	maxConcurrentDownloads int
 	maxMultimodalEntries   int
+	guard                  *addressGuard
 	client                 *http.Client
 }
 
@@ -61,12 +65,26 @@ func NewReplaceMediaURLsStep(params map[string]any) (pipeline.Step, error) {
 		maxEntries = v
 	}
 
-	return &ReplaceMediaURLsStep{
+	guard := &addressGuard{}
+	if v, ok := params["allow_private_networks"].(bool); ok {
+		guard.allowPrivate = v
+	}
+	if raw, present := params["allowed_domains"]; present {
+		domains, err := parseAllowedDomains(raw)
+		if err != nil {
+			return nil, err
+		}
+		guard.allowedDomains = domains
+	}
+
+	step := &ReplaceMediaURLsStep{
 		downloadTimeout:        timeout,
 		maxConcurrentDownloads: maxConcurrent,
 		maxMultimodalEntries:   maxEntries,
-		client:                 &http.Client{Timeout: timeout},
-	}, nil
+		guard:                  guard,
+	}
+	step.client = guard.newClient(timeout)
+	return step, nil
 }
 
 func (s *ReplaceMediaURLsStep) Name() string { return ReplaceMediaURLsStepName }
@@ -180,8 +198,19 @@ func appendMultimodalEntry(reqCtx *pipeline.RequestContext, contentType, b64 str
 	})
 }
 
-func (s *ReplaceMediaURLsStep) download(ctx context.Context, url string) ([]byte, string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+func (s *ReplaceMediaURLsStep) download(ctx context.Context, rawURL string) ([]byte, string, error) {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, "", fmt.Errorf("invalid URL: %w: %w", err, pipeline.ErrBadRequest)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return nil, "", fmt.Errorf("scheme %q not allowed: %w", parsed.Scheme, pipeline.ErrBadRequest)
+	}
+	if !s.guard.hostAllowed(parsed.Hostname()) {
+		return nil, "", fmt.Errorf("host %q not allowed: %w", parsed.Hostname(), pipeline.ErrBadRequest)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, "", err
 	}
@@ -239,4 +268,127 @@ func parseDataURI(uri string) (contentType, b64 string, err error) {
 		ct = defaultContentType
 	}
 	return ct, payload, nil
+}
+
+// addressGuard enforces SSRF protections for outbound image downloads. The IP
+// check runs at dial time, so it covers every connection a single request
+// makes, including each redirect hop. The hostname allowlist is enforced
+// separately because a redirect target's hostname is only known per hop.
+type addressGuard struct {
+	allowPrivate   bool
+	allowedDomains map[string]struct{}
+
+	// allowLoopback relaxes the loopback block for in-package tests, whose
+	// httptest servers bind to 127.0.0.1. Never set in production.
+	allowLoopback bool
+}
+
+// errBlockedAddress marks a dial to a forbidden address. It wraps
+// pipeline.ErrBadRequest so the connection failure surfaced by http.Client.Do
+// (wrapped in *url.Error/*net.OpError, both of which Unwrap) classifies as a
+// client 4xx rather than a 502.
+var errBlockedAddress = fmt.Errorf("address resolves to a blocked range: %w", pipeline.ErrBadRequest)
+
+// cgnatBlock is the RFC 6598 carrier-grade NAT range, which net.IP has no
+// dedicated predicate for.
+var cgnatBlock = &net.IPNet{IP: net.IPv4(100, 64, 0, 0), Mask: net.CIDRMask(10, 32)}
+
+func (g *addressGuard) newClient(timeout time.Duration) *http.Client {
+	// Clone DefaultTransport to keep Proxy: http.ProxyFromEnvironment, so image
+	// fetches still honor HTTP(S)_PROXY, and attach the dial-time IP guard.
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	dialer := &net.Dialer{Control: g.dialControl}
+	transport.DialContext = dialer.DialContext
+
+	return &http.Client{
+		Timeout:   timeout,
+		Transport: transport,
+		CheckRedirect: func(req *http.Request, _ []*http.Request) error {
+			if !g.hostAllowed(req.URL.Hostname()) {
+				return fmt.Errorf("redirect host %q not allowed: %w", req.URL.Hostname(), pipeline.ErrBadRequest)
+			}
+			return nil
+		},
+	}
+}
+
+// dialControl runs against the resolved IP the dialer is about to connect to,
+// defeating DNS-rebinding bypasses that a hostname check would miss.
+func (g *addressGuard) dialControl(_, address string, _ syscall.RawConn) error {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return err
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return fmt.Errorf("cannot parse dial address %q: %w", address, pipeline.ErrBadRequest)
+	}
+	if g.blockedIP(ip) {
+		return errBlockedAddress
+	}
+	return nil
+}
+
+func (g *addressGuard) blockedIP(ip net.IP) bool {
+	// Normalize IPv4-mapped IPv6 (e.g. ::ffff:169.254.169.254) so the IPv4
+	// predicates below see the embedded address.
+	if v4 := ip.To4(); v4 != nil {
+		ip = v4
+	}
+	if ip.IsUnspecified() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+		return true
+	}
+	if ip.IsLoopback() {
+		return !g.allowLoopback
+	}
+	if cgnatBlock.Contains(ip) {
+		return true
+	}
+	if ip.IsPrivate() {
+		// IsPrivate covers RFC1918 (IPv4) and unique-local fc00::/7 (IPv6).
+		// Only RFC1918 is configurable; unique-local is never a valid image
+		// origin and stays blocked even when allowPrivate is set.
+		if ip.To4() != nil {
+			return !g.allowPrivate
+		}
+		return true
+	}
+	return false
+}
+
+func (g *addressGuard) hostAllowed(host string) bool {
+	if len(g.allowedDomains) == 0 {
+		return true
+	}
+	_, ok := g.allowedDomains[strings.ToLower(host)]
+	return ok
+}
+
+// parseAllowedDomains accepts a list of hostnames as either []any (the YAML
+// decode path) or []string (programmatic callers). It returns an error on any
+// other type rather than silently disabling the allowlist, which would be an
+// open-by-default downgrade of a security control.
+func parseAllowedDomains(raw any) (map[string]struct{}, error) {
+	var entries []any
+	switch v := raw.(type) {
+	case []any:
+		entries = v
+	case []string:
+		entries = make([]any, len(v))
+		for i, s := range v {
+			entries[i] = s
+		}
+	default:
+		return nil, fmt.Errorf("allowed_domains must be a list of strings, got %T", raw)
+	}
+
+	domains := make(map[string]struct{}, len(entries))
+	for _, e := range entries {
+		host, ok := e.(string)
+		if !ok {
+			return nil, fmt.Errorf("allowed_domains entries must be strings, got %T", e)
+		}
+		domains[strings.ToLower(host)] = struct{}{}
+	}
+	return domains, nil
 }

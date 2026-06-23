@@ -290,9 +290,8 @@ func coordinatorSubstitutions() map[string]string {
 // component manifests.
 func rendererSubstitutions() map[string]string {
 	return map[string]string{
-		"${VLLM_RENDER_IMAGE}": vllmRenderImage,
-		"${MODEL_NAME}":        modelName,
-		"${HF_TOKEN}":          "",
+		"${VLLM_IMAGE}": vllmSimImage,
+		"${MODEL_NAME}": modelName,
 	}
 }
 

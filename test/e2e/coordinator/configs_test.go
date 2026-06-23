@@ -30,19 +30,19 @@ gateway:
   max_idle_conns_per_host: 100
   idle_conn_timeout: 90s
   timeout: 60s
-  use_openai_format: true
 
 pipeline:
   kv_connector: kv-nixl
   ec_connector: ec-nixl
+  use_openai_format: true
   steps:
     - type: replace-media-urls
       params:
-        download_timeout: 10s
+        download_timeout: 30s
         max_concurrent_downloads: 10
     - type: render
       params:
-        address: "http://vllm-render.${NAMESPACE}.svc:8000"
+        address: "http://vllm-render.${NAMESPACE}.svc:8082"
         timeout: 60s
     - type: encode
       params:

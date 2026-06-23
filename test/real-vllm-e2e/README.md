@@ -31,18 +31,18 @@ From the repo root:
 
 ```sh
 # All e2e tests, default config
-go test -tags=e2e ./tests/e2e/...
+go test -tags=e2e ./test/real-vllm-e2e/...
 
 # Verbose output
-go test -tags=e2e -v ./tests/e2e/...
+go test -tags=e2e -v ./test/real-vllm-e2e/...
 
 # Single test
-go test -tags=e2e -v -run TestE2E_ChatCompletions_TwoImages ./tests/e2e/...
+go test -tags=e2e -v -run TestE2E_ChatCompletions_TwoImages ./test/real-vllm-e2e/...
 
 # Override host/model
 RENDER_E2E_URL=http://my-render-service:8000 \
 RENDER_E2E_MODEL=Qwen/Qwen3-VL-2B-Instruct \
-  go test -tags=e2e -v ./tests/e2e/...
+  go test -tags=e2e -v ./test/real-vllm-e2e/...
 ```
 
 ## What each test covers
@@ -64,5 +64,5 @@ RENDER_E2E_MODEL=Qwen/Qwen3-VL-2B-Instruct \
 - **`render service returned HTTP 400` on the two-images test** — the model
   loaded by the rendering service is not vision-capable. Set
   `RENDER_E2E_MODEL` to a vision model.
-- **No tests run with `go test ./tests/e2e/...`** — you forgot `-tags=e2e`.
+- **No tests run with `go test ./test/real-vllm-e2e/...`** — you forgot `-tags=e2e`.
   Without the tag the package contains no buildable Go source.

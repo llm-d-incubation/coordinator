@@ -28,6 +28,7 @@ spec:
         - "--data-parallel-size=${VLLM_DATA_PARALLEL_SIZE}"
         - "--no-enable-prefix-caching"
         - "--mm-encoder-only"
+        - "--force-dummy-tokenizer"
         - "${VLLM_EXTRA_ARGS_E}"
         ports:
         - name: encode-http

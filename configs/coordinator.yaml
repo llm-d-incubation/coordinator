@@ -49,12 +49,6 @@ gateway:
   # streaming is not bounded by this.
   timeout: 60s
 
-  # use_openai_format=true means /v1/chat/completions and /v1/completions are
-  # forwarded as-is. false rewrites them to /inference/v1/generate using the
-  # internal token-array format. Affects prefill and decode.
-  # env: COORDINATOR_GATEWAY_USE_OPENAI_FORMAT
-  use_openai_format: true
-
 # ---------------------------------------------------------------------------
 # pipeline: ordered list of steps that process every request.
 # ---------------------------------------------------------------------------
@@ -71,6 +65,17 @@ pipeline:
   #   ec-nixl           - NIXL P2P RDMA
   #   ec-shared-storage - shared filesystem (default for non-RDMA clusters)
   ec_connector: ec-shared-storage
+
+  # use_openai_format selects the wire format for the encode and prefill steps.
+  #   true (default) - forward on the client's original OpenAI path
+  #                    (/v1/chat/completions, /v1/completions).
+  #   false          - rewrite to the internal /inference/v1/generate
+  #                    token-array (tokens-in) format.
+  # false requires a render step in the pipeline (render produces the token
+  # IDs the tokens-in format sends); the coordinator fails to start otherwise.
+  # A step may override this in its own params.
+  # env: COORDINATOR_PIPELINE_USE_OPENAI_FORMAT
+  use_openai_format: true
 
   steps:
     # -------------------------------------------------------------------
@@ -91,6 +96,23 @@ pipeline:
         # parts BEFORE any download happens. Cheapest admission gate.
         # 0 (or omitted) = unlimited.
         # max_multimodal_entries: 8
+
+        # allow_private_networks permits downloads whose resolved IP falls in
+        # an RFC1918 private range (10/8, 172.16/12, 192.168/16). Loopback,
+        # link-local (including the 169.254.169.254 cloud metadata endpoint),
+        # CGNAT, and unique-local addresses stay blocked regardless. Enable
+        # only when image origins are inside the cluster network.
+        # Default false.
+        # allow_private_networks: false
+
+        # allowed_domains restricts downloads to an explicit set of hostnames.
+        # When omitted or empty, any host that passes the IP checks above is
+        # allowed. This is an ADDITIONAL filter, not a replacement: a host in
+        # this list is still subject to the IP blocks, so listing "localhost"
+        # or an internal hostname does NOT make it reachable unless the
+        # resolved IP is also permitted (see allow_private_networks).
+        # allowed_domains:
+        #   - images.example.com
 
     # -------------------------------------------------------------------
     # render: tokenizes the request via the rendering service and (for

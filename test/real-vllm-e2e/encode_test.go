@@ -4,7 +4,7 @@
 //
 // To run:
 //
-//	go test -tags=e2e ./tests/e2e/... -run Encode
+//	go test -tags=e2e ./test/real-vllm-e2e/... -run Encode
 //
 // Configuration via environment variables:
 //

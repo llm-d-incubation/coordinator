@@ -961,7 +961,7 @@ The request path matches the user's original endpoint when using OpenAI format, 
 
 ## Request Format Configuration
 
-The `use_openai_format` setting (environment variable: `COORDINATOR_GATEWAY_USE_OPENAI_FORMAT`, default: `true`) controls how encode and prefill steps construct their requests:
+The `use_openai_format` setting (`pipeline.use_openai_format`, environment variable: `COORDINATOR_PIPELINE_USE_OPENAI_FORMAT`, default: `true`) controls how encode and prefill steps construct their requests. `false` (the tokens-in format) requires a `render` step in the pipeline, since render produces the token IDs the generate format sends:
 
 - **`use_openai_format: true` (default):** The request path and body format are derived from the user's original request path at runtime. A `tokens` field is added containing `token_ids` and `features` (without `kwargs_data`).
 - **`use_openai_format: false`:** Uses the internal generate format (`/inference/v1/generate`) with `token_ids` and `features` (including `kwargs_data`) directly in the body.

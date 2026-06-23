@@ -4,7 +4,7 @@
 //
 // To run:
 //
-//	go test -tags=e2e ./tests/e2e/... -run Prefill
+//	go test -tags=e2e ./test/real-vllm-e2e/... -run Prefill
 //
 // Configuration via environment variables (shared with encode_test.go):
 //
