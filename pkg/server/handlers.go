@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"time"
 
 	"github.com/google/uuid"
@@ -28,6 +29,11 @@ func (s *Server) handleCompletions(w http.ResponseWriter, r *http.Request) {
 
 const maxRequestBodySize = 64 << 20 // 64 MB
 
+// validRequestID bounds a client-supplied x-request-id to safe characters and a
+// fixed length. A header that fails the match is replaced with a generated UUID,
+// so attacker-controlled content never reaches error responses or logs.
+var validRequestID = regexp.MustCompile(`^[a-zA-Z0-9\-]{1,128}$`)
+
 func (s *Server) handleInference(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxRequestBodySize+1))
 	if err != nil {
@@ -49,7 +55,7 @@ func (s *Server) handleInference(w http.ResponseWriter, r *http.Request) {
 	model, _ := parsed["model"].(string)
 
 	requestID := r.Header.Get(reqcommon.RequestIDHeaderKey)
-	if requestID == "" {
+	if !validRequestID.MatchString(requestID) {
 		requestID = uuid.New().String()
 	}
 
