@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/llm-d/coordinator/pkg/batch"
 	"github.com/llm-d/coordinator/pkg/config"
 	"github.com/llm-d/coordinator/pkg/pipeline"
 )
@@ -23,7 +24,7 @@ func (s stubStep) Name() string { return s.name }
 func (s stubStep) Execute(context.Context, *pipeline.RequestContext) error { return s.err }
 
 func newTestServer(stepErr error) *Server {
-	p := pipeline.New([]pipeline.Step{stubStep{name: "stub", err: stepErr}})
+	p := pipeline.New([]pipeline.Step{stubStep{name: "stub", err: stepErr}}, batch.Limits{})
 	return New(config.ServerConfig{}, p)
 }
 

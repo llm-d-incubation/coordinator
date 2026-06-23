@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/llm-d/coordinator/pkg/batch"
 	"github.com/llm-d/coordinator/pkg/config"
 	"github.com/llm-d/coordinator/pkg/gateway"
 	"github.com/llm-d/coordinator/pkg/pipeline"
@@ -84,7 +85,7 @@ func TestTextOnlyRequest_SkipsMediaDownloadAndEncode(t *testing.T) {
 		pipelineSteps = append(pipelineSteps, step)
 	}
 
-	p := pipeline.New(pipelineSteps)
+	p := pipeline.New(pipelineSteps, batch.Limits{})
 
 	recorder := httptest.NewRecorder()
 	body := map[string]any{

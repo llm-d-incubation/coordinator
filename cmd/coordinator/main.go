@@ -9,6 +9,7 @@ import (
 
 	logutil "github.com/llm-d/llm-d-router/pkg/common/observability/logging"
 
+	"github.com/llm-d/coordinator/pkg/batch"
 	"github.com/llm-d/coordinator/pkg/config"
 	"github.com/llm-d/coordinator/pkg/gateway"
 	"github.com/llm-d/coordinator/pkg/pipeline"
@@ -66,7 +67,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	p := pipeline.New(steps)
+	limits := batch.Limits{MaxBatch: cfg.Pipeline.MaxBatchSize, MaxConcurrency: cfg.Pipeline.MaxBatchConcurrency}
+	p := pipeline.New(steps, limits)
 	srv := server.New(cfg.Server, p)
 
 	log.Info("starting coordinator", "addr", cfg.Server.ListenAddr)

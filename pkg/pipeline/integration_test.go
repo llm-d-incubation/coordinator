@@ -9,6 +9,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/llm-d/coordinator/pkg/batch"
 	"github.com/llm-d/coordinator/pkg/config"
 	"github.com/llm-d/coordinator/pkg/connectors/ec"
 	"github.com/llm-d/coordinator/pkg/connectors/kv"
@@ -134,7 +135,7 @@ func TestFullPipeline_AllConnectorCombinations(t *testing.T) {
 			}
 			_ = json.Unmarshal([]byte(requestBody), &reqCtx.Body)
 
-			if err := pipeline.New(pipelineSteps).Execute(t.Context(), reqCtx); err != nil {
+			if err := pipeline.New(pipelineSteps, batch.Limits{}).Execute(t.Context(), reqCtx); err != nil {
 				t.Fatalf("pipeline failed: %v", err)
 			}
 
@@ -253,7 +254,7 @@ func TestFullPipeline_Integration(t *testing.T) {
 		pipelineSteps = append(pipelineSteps, step)
 	}
 
-	p := pipeline.New(pipelineSteps)
+	p := pipeline.New(pipelineSteps, batch.Limits{})
 
 	requestBody := `{
 		"model": "test-model",
