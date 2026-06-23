@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/spf13/pflag"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -73,31 +74,38 @@ func main() {
 	p := pipeline.New(steps)
 	srv := server.New(cfg.Server, p)
 
+	log.Info("starting coordinator", "addr", cfg.Server.ListenAddr)
+	log.Info("graceful shutdown enabled", "timeout", cfg.Server.ShutdownTimeout)
+
+	if err := serveUntilSignal(srv, cfg.Server.ShutdownTimeout); err != nil {
+		log.Error(err, "server error")
+		os.Exit(1)
+	}
+}
+
+// serveUntilSignal starts srv and blocks until it exits or a signal is received.
+// On SIGTERM/SIGINT it initiates a graceful drain bounded by shutdownTimeout.
+func serveUntilSignal(srv *server.Server, shutdownTimeout time.Duration) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	srvErr := make(chan error, 1)
 	go func() { srvErr <- srv.ListenAndServe() }()
 
-	log.Info("starting coordinator", "addr", cfg.Server.ListenAddr)
-	log.Info("graceful shutdown enabled", "timeout", cfg.Server.ShutdownTimeout)
-
 	select {
 	case err := <-srvErr:
-		stop()
 		if !errors.Is(err, http.ErrServerClosed) {
-			log.Error(err, "server error")
-			os.Exit(1)
+			return err
 		}
 	case <-ctx.Done():
 		stop()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.Server.ShutdownTimeout)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer cancel()
 		if err := srv.Shutdown(shutdownCtx); err != nil {
-			cancel()
-			log.Error(err, "shutdown error")
-			os.Exit(1)
+			return err
 		}
-		cancel()
 	}
+	return nil
 }
 
 func mergeConnectorDefaults(params map[string]any, kvConnector, ecConnector string) map[string]any {
