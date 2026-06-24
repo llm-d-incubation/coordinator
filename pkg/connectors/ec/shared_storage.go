@@ -33,5 +33,5 @@ func (sharedStorageEC) MergeEncodeResponse(_ context.Context, _ *pipeline.Reques
 }
 
 func (sharedStorageEC) PreparePrefillECParams(_ context.Context, _ *pipeline.RequestContext) (map[string]any, error) {
-	return make(map[string]any), nil
+	return nil, nil
 }
