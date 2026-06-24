@@ -17,6 +17,7 @@ limitations under the License.
 package steps
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -231,7 +232,7 @@ func (s *RenderStep) postRender(ctx context.Context, reqCtx *pipeline.RequestCon
 	url := s.serviceAddress + basePath + "/render"
 	logger.V(logutil.DEFAULT).Info("sending request", "url", url)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, io.NopCloser(jsonReader(body)))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("creating render request: %w", err)
 	}
