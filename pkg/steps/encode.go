@@ -34,7 +34,9 @@ type EncodeStep struct {
 func NewEncodeStep(params map[string]any) (pipeline.Step, error) {
 	useOpenAI := parseUseOpenAIFormat(params)
 	maxParallel := 8
-	if v, ok := params["max_parallel"].(int); ok {
+	if v, ok, err := paramInt(params, "max_parallel"); err != nil {
+		return nil, err
+	} else if ok {
 		if v <= 0 {
 			return nil, fmt.Errorf("max_parallel must be positive, got %d", v)
 		}

@@ -46,15 +46,16 @@ type ReplaceMediaURLsStep struct {
 
 func NewReplaceMediaURLsStep(params map[string]any) (pipeline.Step, error) {
 	timeout := 10 * time.Second
-	if v, ok := params["download_timeout"].(string); ok {
-		d, err := time.ParseDuration(v)
-		if err == nil {
-			timeout = d
-		}
+	if v, ok, err := paramDuration(params, "download_timeout"); err != nil {
+		return nil, err
+	} else if ok {
+		timeout = v
 	}
 
 	maxConcurrent := 10
-	if v, ok := params["max_concurrent_downloads"].(int); ok {
+	if v, ok, err := paramInt(params, "max_concurrent_downloads"); err != nil {
+		return nil, err
+	} else if ok {
 		if v <= 0 {
 			return nil, fmt.Errorf("max_concurrent_downloads must be positive, got %d", v)
 		}
@@ -62,7 +63,9 @@ func NewReplaceMediaURLsStep(params map[string]any) (pipeline.Step, error) {
 	}
 
 	maxEntries := 0
-	if v, ok := params["max_multimodal_entries"].(int); ok {
+	if v, ok, err := paramInt(params, "max_multimodal_entries"); err != nil {
+		return nil, err
+	} else if ok {
 		if v < 0 {
 			return nil, fmt.Errorf("max_multimodal_entries must be non-negative, got %d", v)
 		}
@@ -70,7 +73,9 @@ func NewReplaceMediaURLsStep(params map[string]any) (pipeline.Step, error) {
 	}
 
 	maxDownloadSize := int64(defaultMaxDownloadSize)
-	if v, ok := params["max_download_size"].(int); ok {
+	if v, ok, err := paramInt(params, "max_download_size"); err != nil {
+		return nil, err
+	} else if ok {
 		// math.MaxInt is reserved so download() can read maxDownloadSize+1 as an
 		// oversize sentinel without overflowing to a negative limit, which
 		// io.LimitReader would treat as immediate EOF.
