@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -159,6 +160,13 @@ func TestClient_RequestBuffersResponseBody(t *testing.T) {
 
 	if resp.StatusCode != http.StatusCreated {
 		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusCreated)
+	}
+	// Pin the buffering contract: the streaming transport body is replaced with
+	// an in-memory io.NopCloser(bytes.NewReader(...)). Comparing dynamic types
+	// fails if Request ever returns the original resp.Body instead.
+	wantType := reflect.TypeOf(io.NopCloser(bytes.NewReader(nil)))
+	if got := reflect.TypeOf(resp.Body); got != wantType {
+		t.Errorf("resp.Body type = %v, want buffered %v", got, wantType)
 	}
 	got, err := io.ReadAll(resp.Body)
 	if err != nil {
