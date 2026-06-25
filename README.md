@@ -212,9 +212,8 @@ type RequestContext struct {
     TokenIDs          []int               // Token IDs from the render step
     MultimodalEntries []MultimodalEntry   // Downloaded multimodal content
     ECTransferParams  []map[string]any    // Encode results, one entry per encode response (mm_hash -> descriptor)
-    KVTransferParams  map[string]any      // Prefill results
+    KVTransferParams  map[string]any      // Prefill KV-cache transfer hints, consumed by the KV connector at decode
     ResponseWriter    http.ResponseWriter // Client response writer; decode steps stream the final response to it
-    StartTime         time.Time           // Request arrival time
 }
 ```
 

@@ -19,7 +19,6 @@ package pipeline
 import (
 	"net/http"
 	"strings"
-	"time"
 )
 
 var hopByHopHeaders = map[string]bool{
@@ -72,12 +71,13 @@ type RequestContext struct {
 	// Populated by EncodeStep when the EC connector is ec-nixl; empty for
 	// ec-shared-storage.
 	ECTransferParams []map[string]any
+	// KVTransferParams carries the prefill pod's KV-cache transfer hints to the
+	// decode step. Populated by PrefillStep from the prefill response; consumed
+	// by the KV connector when building the decode request.
 	KVTransferParams map[string]any
 
 	// ResponseWriter is used by decode steps to stream the final response to the client.
 	ResponseWriter http.ResponseWriter
-
-	StartTime time.Time
 }
 
 type MultimodalEntry struct {

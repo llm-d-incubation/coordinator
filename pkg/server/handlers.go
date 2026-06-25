@@ -23,7 +23,6 @@ import (
 	"io"
 	"net/http"
 	"regexp"
-	"time"
 
 	"github.com/google/uuid"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -85,7 +84,6 @@ func (s *Server) handleInference(w http.ResponseWriter, r *http.Request) {
 		Stream:           stream,
 		KVTransferParams: make(map[string]any),
 		ResponseWriter:   w,
-		StartTime:        time.Now(),
 	}
 
 	logger := ctrl.Log.WithName("handler").WithValues(reqcommon.RequestIDHeaderKey, reqCtx.RequestID)
