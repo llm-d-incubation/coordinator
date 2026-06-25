@@ -31,12 +31,13 @@ server:
   shutdown_timeout: 25s
 
 # ---------------------------------------------------------------------------
-# gateway: outbound HTTP client used by encode/prefill/decode to reach Envoy.
+# gateway: outbound HTTP client used by encode/prefill/decode to reach the
+# Inference Gateway.
 # ---------------------------------------------------------------------------
 gateway:
-  # address is the base URL of the Envoy gateway (no trailing slash).
+  # address is the base URL of the Inference Gateway (no trailing slash).
   # Every path-bearing call (e.g. /v1/chat/completions) is appended to this.
-  address: "http://envoy-gateway:80"
+  address: "http://inference-gateway:80"
 
   # max_idle_conns_per_host caps the size of the keep-alive pool. Encode
   # fan-out can open many concurrent connections; raise if you see
