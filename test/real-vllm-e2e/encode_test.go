@@ -145,7 +145,7 @@ func newGatewayClient() *gateway.Client {
 
 func newEncodeStepFor(t *testing.T, gw *gateway.Client, useOpenAIFormat bool) *steps.EncodeStep {
 	t.Helper()
-	step, err := steps.NewEncodeStep(map[string]any{
+	step, err := steps.NewEncodeStep(gw, map[string]any{
 		"use_openai_format":    useOpenAIFormat,
 		"max_parallel":         4,
 		steps.ParamECConnector: ecConnectorName(),
@@ -153,9 +153,7 @@ func newEncodeStepFor(t *testing.T, gw *gateway.Client, useOpenAIFormat bool) *s
 	if err != nil {
 		t.Fatalf("NewEncodeStep: %v", err)
 	}
-	es := step.(*steps.EncodeStep)
-	es.SetGatewayClient(gw)
-	return es
+	return step.(*steps.EncodeStep)
 }
 
 // TestE2E_Encode_Synthetic drives the encoder with hand-crafted multimodal
@@ -536,14 +534,6 @@ func TestE2E_Encode_DiagnoseGenerateFailure(t *testing.T) {
 	}
 
 	// Build an EncodeStep that sends through a capturing transport.
-	es, err := steps.NewEncodeStep(map[string]any{
-		"use_openai_format":    false, // Generate variant
-		"max_parallel":         1,
-		steps.ParamECConnector: ecConnectorName(),
-	})
-	if err != nil {
-		t.Fatalf("NewEncodeStep: %v", err)
-	}
 	captured := &capturingTransport{wrapped: http.DefaultTransport}
 	gw := gateway.New(config.GatewayConfig{
 		Address:             gatewayURL(),
@@ -554,7 +544,14 @@ func TestE2E_Encode_DiagnoseGenerateFailure(t *testing.T) {
 	// Replace the gateway's transport with our capturing one. The Client
 	// type doesn't expose a setter, so we splice in a custom http.Client.
 	patchGatewayClientTransport(gw, &http.Client{Transport: captured})
-	es.(*steps.EncodeStep).SetGatewayClient(gw)
+	es, err := steps.NewEncodeStep(gw, map[string]any{
+		"use_openai_format":    false, // Generate variant
+		"max_parallel":         1,
+		steps.ParamECConnector: ecConnectorName(),
+	})
+	if err != nil {
+		t.Fatalf("NewEncodeStep: %v", err)
+	}
 
 	execErr := es.Execute(ctx, reqCtx)
 

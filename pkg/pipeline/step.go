@@ -30,5 +30,5 @@ type Step interface {
 
 // StepFactory creates a Step from the gateway client and YAML configuration
 // parameters. Steps that issue upstream requests store the client at
-// construction; steps that do not ignore it.
+// construction; steps that do not need it ignore the argument.
 type StepFactory func(gwClient *gateway.Client, params map[string]any) (Step, error)
