@@ -41,7 +41,16 @@ const (
 )
 
 func (f RequestFormat) String() string {
-	return PathForFormat(f)
+	switch f {
+	case FormatGenerate:
+		return DefaultGeneratePath
+	case FormatCompletions:
+		return PathCompletions
+	case FormatChatCompletions:
+		return PathChatCompletions
+	default:
+		return "unknown"
+	}
 }
 
 // DetectFormat classifies an inbound request path. The chi router registers

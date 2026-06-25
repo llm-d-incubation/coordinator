@@ -23,7 +23,7 @@ func TestRequestFormatString(t *testing.T) {
 		FormatGenerate:        DefaultGeneratePath,
 		FormatCompletions:     PathCompletions,
 		FormatChatCompletions: PathChatCompletions,
-		RequestFormat(99):     DefaultGeneratePath,
+		RequestFormat(99):     "unknown",
 	}
 	for f, want := range cases {
 		if got := f.String(); got != want {
