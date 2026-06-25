@@ -175,10 +175,9 @@ func TestRedactBody(t *testing.T) {
 	})
 }
 
-// Request buffers the upstream response body so the caller can read it after the
-// connection closes, and rewraps it as a fresh ReadCloser. This round-trip pins
-// that contract: the returned body is fully readable and carries the upstream
-// status.
+// Request returns a readable body regardless of log level: buffered only at
+// TRACE, otherwise the unread stream. This round-trip pins that contract: the
+// returned body is fully readable and carries the upstream status.
 func TestClient_RequestReturnsReadableBody(t *testing.T) {
 	const want = `{"ok":true}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

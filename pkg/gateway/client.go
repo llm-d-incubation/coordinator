@@ -68,7 +68,10 @@ func New(cfg config.GatewayConfig) *Client {
 	}
 }
 
-// Request sends an HTTP request to the gateway at the given path.
+// Request sends an HTTP request to the gateway at the given path. The returned
+// response body is always readable; it is buffered into memory only at TRACE,
+// where it is logged and re-wrapped, and otherwise handed back as the unread
+// stream. The caller owns closing the body.
 func (c *Client) Request(ctx context.Context, method, path string, body []byte, headers map[string]string) (*http.Response, error) {
 	url := c.baseURL + path
 
