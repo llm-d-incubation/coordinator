@@ -1,0 +1,55 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: ${GATEWAY_NAME}-coordinator
+spec:
+  parentRefs:
+  - group: gateway.networking.k8s.io
+    kind: Gateway
+    name: ${GATEWAY_NAME}
+  rules:
+  - matches:
+    - headers:
+      - name: EPP-Phase
+        type: Exact
+        value: encode
+      path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - group: inference.networking.k8s.io
+      kind: InferencePool
+      name: ${POOL_NAME}-encode
+  - matches:
+    - headers:
+      - name: EPP-Phase
+        type: Exact
+        value: prefill
+      path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - group: inference.networking.k8s.io
+      kind: InferencePool
+      name: ${POOL_NAME}-prefill
+  - matches:
+    - headers:
+      - name: EPP-Phase
+        type: Exact
+        value: decode
+      path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - group: inference.networking.k8s.io
+      kind: InferencePool
+      name: ${POOL_NAME}-decode
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - group: ""
+      kind: Service
+      name: llm-d-coordinator
+      port: 8080
