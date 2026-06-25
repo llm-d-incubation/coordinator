@@ -86,13 +86,17 @@ func (s *EncodeStep) Execute(ctx context.Context, reqCtx *pipeline.RequestContex
 	g.SetLimit(s.maxParallel)
 
 	results := make([]map[string]any, len(reqCtx.MultimodalEntries))
-	imageParts := collectImageParts(reqCtx.Body)
+
+	format := resolveFormat(s.useOpenAIFormat, reqCtx.OriginalPath)
+	var imageParts []map[string]any
+	if format == gateway.FormatChatCompletions {
+		imageParts = collectImageParts(reqCtx.Body)
+	}
 
 	for i, entry := range reqCtx.MultimodalEntries {
 		g.Go(func() error {
 			tokenIDs := s.buildEncodeTokenIDs(reqCtx.TokenIDs, entry)
 
-			format := resolveFormat(s.useOpenAIFormat, reqCtx.OriginalPath)
 			body := s.buildEncodeBody(reqCtx, tokenIDs, entry, format, imageParts)
 
 			bodyBytes, err := json.Marshal(body)
