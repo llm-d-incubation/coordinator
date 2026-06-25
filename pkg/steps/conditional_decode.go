@@ -18,6 +18,7 @@ package steps
 
 import (
 	"context"
+	"fmt"
 	"maps"
 	"net/http"
 
@@ -41,6 +42,9 @@ type ConditionalDecodeStep struct {
 }
 
 func NewConditionalDecodeStep(gwClient *gateway.Client, params map[string]any) (pipeline.Step, error) {
+	if gwClient == nil {
+		return nil, fmt.Errorf("conditional-decode: gateway client is required")
+	}
 	return &ConditionalDecodeStep{useOpenAIFormat: parseUseOpenAIFormat(params), gwClient: gwClient}, nil
 }
 

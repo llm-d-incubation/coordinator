@@ -20,6 +20,9 @@ import (
 	"encoding/json"
 	"testing"
 	"time"
+
+	"github.com/llm-d/coordinator/pkg/config"
+	"github.com/llm-d/coordinator/pkg/gateway"
 )
 
 func TestParamInt(t *testing.T) {
@@ -145,7 +148,7 @@ func TestNewReplaceMediaURLsStep_FloatFormattedLimit(t *testing.T) {
 }
 
 func TestNewEncodeStep_FloatFormattedLimit(t *testing.T) {
-	step, err := NewEncodeStep(nil, map[string]any{"max_parallel": 4.0})
+	step, err := NewEncodeStep(gateway.New(config.GatewayConfig{}), map[string]any{"max_parallel": 4.0})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

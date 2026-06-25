@@ -210,13 +210,15 @@ func TestDecodeStep_ConnectorShapesDecodeBody(t *testing.T) {
 }
 
 func TestPrefillStep_UnknownConnectorRejected(t *testing.T) {
-	if _, err := NewPrefillStep(nil, map[string]any{ParamKVConnector: "bogus"}); err == nil {
+	gwClient := gateway.New(config.GatewayConfig{})
+	if _, err := NewPrefillStep(gwClient, map[string]any{ParamKVConnector: "bogus"}); err == nil {
 		t.Fatal("expected error for unknown connector")
 	}
 }
 
 func TestDecodeStep_UnknownConnectorRejected(t *testing.T) {
-	if _, err := NewDecodeStep(nil, map[string]any{ParamKVConnector: "bogus"}); err == nil {
+	gwClient := gateway.New(config.GatewayConfig{})
+	if _, err := NewDecodeStep(gwClient, map[string]any{ParamKVConnector: "bogus"}); err == nil {
 		t.Fatal("expected error for unknown connector")
 	}
 }

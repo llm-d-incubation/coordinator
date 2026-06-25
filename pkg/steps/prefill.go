@@ -48,6 +48,9 @@ type PrefillStep struct {
 }
 
 func NewPrefillStep(gwClient *gateway.Client, params map[string]any) (pipeline.Step, error) {
+	if gwClient == nil {
+		return nil, fmt.Errorf("prefill: gateway client is required")
+	}
 	useOpenAI := parseUseOpenAIFormat(params)
 	kvName, _ := params[ParamKVConnector].(string)
 	kvConn, err := kv.Build(kvName)
