@@ -86,13 +86,14 @@ func (s *EncodeStep) Execute(ctx context.Context, reqCtx *pipeline.RequestContex
 	g.SetLimit(s.maxParallel)
 
 	results := make([]map[string]any, len(reqCtx.MultimodalEntries))
+	imageParts := collectImageParts(reqCtx.Body)
 
 	for i, entry := range reqCtx.MultimodalEntries {
 		g.Go(func() error {
 			tokenIDs := s.buildEncodeTokenIDs(reqCtx.TokenIDs, entry)
 
 			format := resolveFormat(s.useOpenAIFormat, reqCtx.OriginalPath)
-			body := s.buildEncodeBody(reqCtx, tokenIDs, entry, format)
+			body := s.buildEncodeBody(reqCtx, tokenIDs, entry, format, imageParts)
 
 			bodyBytes, err := json.Marshal(body)
 			if err != nil {
@@ -169,10 +170,10 @@ func (s *EncodeStep) buildEncodeTokenIDs(fullTokenIDs []int, entry pipeline.Mult
 	return tokenIDs
 }
 
-func (s *EncodeStep) buildEncodeBody(reqCtx *pipeline.RequestContext, tokenIDs []int, entry pipeline.MultimodalEntry, format gateway.RequestFormat) map[string]any {
+func (s *EncodeStep) buildEncodeBody(reqCtx *pipeline.RequestContext, tokenIDs []int, entry pipeline.MultimodalEntry, format gateway.RequestFormat, imageParts []map[string]any) map[string]any {
 	switch format {
 	case gateway.FormatChatCompletions:
-		imageContent := s.buildSingleImageContent(reqCtx, entry)
+		imageContent := buildSingleImageContent(imageParts, entry.Index)
 		body := map[string]any{
 			"model": reqCtx.Model,
 			"messages": []any{
@@ -205,9 +206,12 @@ func (s *EncodeStep) buildEncodeBody(reqCtx *pipeline.RequestContext, tokenIDs [
 	}
 }
 
-func (s *EncodeStep) buildSingleImageContent(reqCtx *pipeline.RequestContext, entry pipeline.MultimodalEntry) map[string]any {
-	messages, _ := reqCtx.Body["messages"].([]any)
-	imgIdx := 0
+// collectImageParts walks the request messages once and returns the image_url
+// parts in order, so the fan-out loop can index by position instead of
+// re-walking all parts per image (O(N*M) -> O(N+M)).
+func collectImageParts(body map[string]any) []map[string]any {
+	messages, _ := body["messages"].([]any)
+	var parts []map[string]any
 	for _, msg := range messages {
 		msgMap, ok := msg.(map[string]any)
 		if !ok {
@@ -222,20 +226,23 @@ func (s *EncodeStep) buildSingleImageContent(reqCtx *pipeline.RequestContext, en
 			if !ok {
 				continue
 			}
-			if partMap["type"] != "image_url" {
-				continue
+			if partMap["type"] == imageURLPartType {
+				parts = append(parts, partMap)
 			}
-			if imgIdx == entry.Index {
-				return map[string]any{
-					"type":      "image_url",
-					"image_url": partMap["image_url"],
-				}
-			}
-			imgIdx++
+		}
+	}
+	return parts
+}
+
+func buildSingleImageContent(imageParts []map[string]any, index int) map[string]any {
+	if index >= 0 && index < len(imageParts) {
+		return map[string]any{
+			"type":      imageURLPartType,
+			"image_url": imageParts[index][imageURLPartType],
 		}
 	}
 	return map[string]any{
-		"type":      "image_url",
+		"type":      imageURLPartType,
 		"image_url": map[string]any{"url": ""},
 	}
 }
