@@ -1042,3 +1042,54 @@ func TestReplaceMediaURLsStep_RejectsNonListAllowedDomains(t *testing.T) {
 		t.Fatal("expected error for non-list allowed_domains")
 	}
 }
+
+func TestReplaceMediaURLsStep_RejectsNonImageDataURI(t *testing.T) {
+	step, _ := NewReplaceMediaURLsStep(map[string]any{})
+	reqCtx := &pipeline.RequestContext{
+		Body: map[string]any{
+			"messages": []any{
+				map[string]any{
+					"role": "user",
+					"content": []any{
+						map[string]any{
+							"type":      "image_url",
+							"image_url": map[string]any{"url": "data:text/html;base64,PGgxPmhpPC9oMT4="},
+						},
+					},
+				},
+			},
+		},
+	}
+	err := step.Execute(context.Background(), reqCtx)
+	if err == nil {
+		t.Fatal("expected error for non-image data URI content type")
+	}
+	if !errors.Is(err, pipeline.ErrBadRequest) {
+		t.Fatalf("expected ErrBadRequest, got %v", err)
+	}
+}
+
+func TestReplaceMediaURLsStep_CancelledContextSkipsDataURIParse(t *testing.T) {
+	step, _ := NewReplaceMediaURLsStep(map[string]any{})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	reqCtx := &pipeline.RequestContext{
+		Body: map[string]any{
+			"messages": []any{
+				map[string]any{
+					"role": "user",
+					"content": []any{
+						map[string]any{
+							"type":      "image_url",
+							"image_url": map[string]any{"url": "data:image/jpeg;base64,/9j/4AAQ"},
+						},
+					},
+				},
+			},
+		},
+	}
+	err := step.Execute(ctx, reqCtx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got %v", err)
+	}
+}

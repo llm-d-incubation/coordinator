@@ -182,10 +182,16 @@ func (s *ReplaceMediaURLsStep) Execute(ctx context.Context, reqCtx *pipeline.Req
 
 	results := make([]downloadResult, len(imageURLs))
 	for i, ref := range imageURLs {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if strings.HasPrefix(ref.url, "data:") {
 			contentType, b64, err := parseDataURI(ref.url)
 			if err != nil {
 				return fmt.Errorf("parsing data URI at message %d part %d: %w: %w", ref.msgIdx, ref.partIdx, err, pipeline.ErrBadRequest)
+			}
+			if !allowedImageContentType(contentType) {
+				return fmt.Errorf("data URI content type %q not allowed at message %d part %d: %w", contentType, ref.msgIdx, ref.partIdx, pipeline.ErrBadRequest)
 			}
 			results[i] = downloadResult{ref: ref, base64Data: b64, contentType: contentType}
 			continue
@@ -286,6 +292,22 @@ type downloadResult struct {
 	ref         imageRef
 	base64Data  string
 	contentType string
+}
+
+// allowedImageContentTypes is the set of data URI media types a vision model
+// accepts. Restricting it keeps non-image payloads (HTML, SVG, scripts) from
+// being inlined and forwarded downstream. Other multimedia types (audio,
+// video) will be added here as the pipeline gains support for them.
+var allowedImageContentTypes = map[string]struct{}{
+	"image/jpeg": {},
+	"image/png":  {},
+	"image/gif":  {},
+	"image/webp": {},
+}
+
+func allowedImageContentType(contentType string) bool {
+	_, ok := allowedImageContentTypes[strings.ToLower(strings.TrimSpace(contentType))]
+	return ok
 }
 
 func parseDataURI(uri string) (contentType, b64 string, err error) {
