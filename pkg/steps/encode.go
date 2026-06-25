@@ -19,6 +19,7 @@ package steps
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -48,7 +49,7 @@ type EncodeStep struct {
 
 func NewEncodeStep(gwClient *gateway.Client, params map[string]any) (pipeline.Step, error) {
 	if gwClient == nil {
-		return nil, fmt.Errorf("encode: gateway client is required")
+		return nil, errors.New("encode: gateway client is required")
 	}
 	useOpenAI := parseUseOpenAIFormat(params)
 	maxParallel := 8
