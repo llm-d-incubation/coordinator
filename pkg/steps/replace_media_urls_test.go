@@ -288,10 +288,15 @@ func TestParseDataURI(t *testing.T) {
 			wantPayload: "iVBORw0K",
 		},
 		{
-			name:        "missing media type defaults to octet-stream",
-			uri:         "data:;base64,YWJj",
-			wantType:    defaultContentType,
-			wantPayload: "YWJj",
+			name:    "missing media type",
+			uri:     "data:;base64,YWJj",
+			wantErr: true,
+		},
+		{
+			name:        "content type normalized to lowercase and trimmed",
+			uri:         "data:IMAGE/PNG ;base64,iVBORw0K",
+			wantType:    "image/png",
+			wantPayload: "iVBORw0K",
 		},
 		{
 			name:    "missing comma",
@@ -1093,12 +1098,7 @@ func TestReplaceMediaURLsStep_RejectsMissingMediaType(t *testing.T) {
 	if !errors.Is(err, pipeline.ErrBadRequest) {
 		t.Fatalf("expected ErrBadRequest, got %v", err)
 	}
-	if strings.Contains(err.Error(), "application/octet-stream") {
-		t.Errorf("error message should not mention the fallback content type, got: %v", err)
-	}
 }
-
-
 
 func TestReplaceMediaURLsStep_CancelledContextSkipsDataURIParse(t *testing.T) {
 	step, _ := NewReplaceMediaURLsStep(map[string]any{})

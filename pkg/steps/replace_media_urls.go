@@ -195,9 +195,6 @@ func (s *ReplaceMediaURLsStep) Execute(ctx context.Context, reqCtx *pipeline.Req
 			if err != nil {
 				return fmt.Errorf("parsing data URI at message %d part %d: %w: %w", ref.msgIdx, ref.partIdx, err, pipeline.ErrBadRequest)
 			}
-			if contentType == defaultContentType {
-				return fmt.Errorf("data URI at message %d part %d missing media type: %w", ref.msgIdx, ref.partIdx, pipeline.ErrBadRequest)
-			}
 			if !allowedImageContentType(contentType) {
 				return fmt.Errorf("data URI content type %q not allowed at message %d part %d: %w", contentType, ref.msgIdx, ref.partIdx, pipeline.ErrBadRequest)
 			}
@@ -338,9 +335,9 @@ func parseDataURI(uri string) (contentType, b64 string, err error) {
 		return "", "", errors.New("data URI must be base64-encoded")
 	}
 	if ct == "" {
-		ct = defaultContentType
+		return "", "", errors.New("data URI missing media type")
 	}
-	return ct, payload, nil
+	return strings.ToLower(strings.TrimSpace(ct)), payload, nil
 }
 
 // addressGuard enforces SSRF protections for outbound image downloads. The IP
