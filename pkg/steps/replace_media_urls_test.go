@@ -1069,6 +1069,37 @@ func TestReplaceMediaURLsStep_RejectsNonImageDataURI(t *testing.T) {
 	}
 }
 
+func TestReplaceMediaURLsStep_RejectsMissingMediaType(t *testing.T) {
+	step, _ := NewReplaceMediaURLsStep(map[string]any{})
+	reqCtx := &pipeline.RequestContext{
+		Body: map[string]any{
+			"messages": []any{
+				map[string]any{
+					"role": "user",
+					"content": []any{
+						map[string]any{
+							"type":      "image_url",
+							"image_url": map[string]any{"url": "data:;base64,AAAA"},
+						},
+					},
+				},
+			},
+		},
+	}
+	err := step.Execute(context.Background(), reqCtx)
+	if err == nil {
+		t.Fatal("expected error for data URI missing media type")
+	}
+	if !errors.Is(err, pipeline.ErrBadRequest) {
+		t.Fatalf("expected ErrBadRequest, got %v", err)
+	}
+	if strings.Contains(err.Error(), "application/octet-stream") {
+		t.Errorf("error message should not mention the fallback content type, got: %v", err)
+	}
+}
+
+
+
 func TestReplaceMediaURLsStep_CancelledContextSkipsDataURIParse(t *testing.T) {
 	step, _ := NewReplaceMediaURLsStep(map[string]any{})
 	ctx, cancel := context.WithCancel(context.Background())
