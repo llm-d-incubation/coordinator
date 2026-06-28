@@ -41,6 +41,8 @@ type Client struct {
 	baseURL    string
 }
 
+// New creates a Client from a GatewayConfig, constructing an http.Transport
+// with the configured connection pool and timeout settings.
 func New(cfg config.GatewayConfig) *Client {
 	transport := &http.Transport{
 		DialContext: (&net.Dialer{
@@ -53,11 +55,15 @@ func New(cfg config.GatewayConfig) *Client {
 		ForceAttemptHTTP2:     true,
 	}
 
+	return NewWithTransport(transport, cfg.Address)
+}
+
+// NewWithTransport creates a Client using the provided transport and base URL.
+// A nil transport is valid; http.Client will fall back to http.DefaultTransport.
+func NewWithTransport(transport *http.Transport, baseURL string) *Client {
 	return &Client{
-		httpClient: &http.Client{
-			Transport: transport,
-		},
-		baseURL: cfg.Address,
+		httpClient: &http.Client{Transport: transport},
+		baseURL:    baseURL,
 	}
 }
 
