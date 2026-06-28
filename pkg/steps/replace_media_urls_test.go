@@ -1112,7 +1112,7 @@ func TestReplaceMediaURLsStep_CancelledContextSkipsDataURIParse(t *testing.T) {
 					"content": []any{
 						map[string]any{
 							"type":      "image_url",
-							"image_url": map[string]any{"url": "data:image/jpeg;base64,/9j/4AAQ"},
+							"image_url": map[string]any{"url": "data:image/jpeg,raw"},
 						},
 					},
 				},
