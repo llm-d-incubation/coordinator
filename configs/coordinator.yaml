@@ -36,13 +36,13 @@ server:
   # streams held open for up to write_timeout are force-closed once the grace period expires.
   shutdown_timeout: 25s
 
-  # max_request_body_size caps the request body in megabytes. The default is sized
+  # max_request_body_size caps the request body in bytes. The default is sized
   # for multimodal requests that inline images as data: URIs, which land in the
   # body verbatim and are not subject to replace-media-urls.max_download_size. A
-  # text-only deployment can set a much smaller value. Megabytes; default 64
+  # text-only deployment can set a much smaller value. Bytes; default 67108864
   # (64 MB).
   # env: COORDINATOR_SERVER_MAX_REQUEST_BODY_SIZE
-  # max_request_body_size: 64
+  # max_request_body_size: 67108864
 
 # ---------------------------------------------------------------------------
 # gateway: outbound HTTP client used by encode/prefill/decode to reach the
