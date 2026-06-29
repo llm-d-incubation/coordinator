@@ -1049,7 +1049,7 @@ func TestReplaceMediaURLsStep_RejectsNonListAllowedDomains(t *testing.T) {
 }
 
 func TestReplaceMediaURLsStep_RejectsNonImageDataURI(t *testing.T) {
-	step, _ := NewReplaceMediaURLsStep(map[string]any{})
+	step, _ := NewReplaceMediaURLsStep(nil, map[string]any{})
 	reqCtx := &pipeline.RequestContext{
 		Body: map[string]any{
 			"messages": []any{
@@ -1075,7 +1075,7 @@ func TestReplaceMediaURLsStep_RejectsNonImageDataURI(t *testing.T) {
 }
 
 func TestReplaceMediaURLsStep_RejectsMissingMediaType(t *testing.T) {
-	step, _ := NewReplaceMediaURLsStep(map[string]any{})
+	step, _ := NewReplaceMediaURLsStep(nil, map[string]any{})
 	reqCtx := &pipeline.RequestContext{
 		Body: map[string]any{
 			"messages": []any{
@@ -1101,7 +1101,7 @@ func TestReplaceMediaURLsStep_RejectsMissingMediaType(t *testing.T) {
 }
 
 func TestReplaceMediaURLsStep_CancelledContextSkipsDataURIParse(t *testing.T) {
-	step, _ := NewReplaceMediaURLsStep(map[string]any{})
+	step, _ := NewReplaceMediaURLsStep(nil, map[string]any{})
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	reqCtx := &pipeline.RequestContext{
