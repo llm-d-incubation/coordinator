@@ -1,0 +1,26 @@
+[package]
+name = "praxis-prefill-proxy"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "praxis_prefill_proxy"
+path = "src/lib.rs"
+
+[[bin]]
+name = "praxis-prefill-proxy"
+path = "src/main.rs"
+
+[dependencies]
+praxis         = { git = "https://github.com/praxis-proxy/praxis" }
+praxis-filter  = { git = "https://github.com/praxis-proxy/praxis", package = "praxis-proxy-filter" }
+async-trait    = "0.1"
+reqwest        = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+serde_yaml     = "0.9"
+tracing        = "0.1"
+
+[dev-dependencies]
+http              = "1"
+praxis-core       = { git = "https://github.com/praxis-proxy/praxis", package = "praxis-proxy-core" }
+praxis-test-utils = { git = "https://github.com/praxis-proxy/praxis" }
+tokio             = { version = "1", features = ["rt-multi-thread", "macros"] }
