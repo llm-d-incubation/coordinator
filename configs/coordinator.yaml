@@ -15,7 +15,7 @@
 # including kv_transfer_params and ec_transfer_params coordination fields such as
 # bootstrap_host, bootstrap_room, and remote_host.
 # A compromised log store would expose them.
-log_level: 4
+log_level: 2
 
 # ---------------------------------------------------------------------------
 # server: HTTP listener for incoming OpenAI-compatible requests.
