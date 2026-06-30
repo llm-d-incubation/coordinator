@@ -55,7 +55,7 @@ gateway:
   # max_idle_conns_per_host caps the size of the keep-alive pool. Encode
   # fan-out can open many concurrent connections; raise if you see
   # connection churn under multi-image load.
-  max_idle_conns_per_host: 100
+  max_idle_conns_per_host: 200
 
   # idle_conn_timeout is how long an idle keep-alive connection survives
   # before the transport closes it.
@@ -149,6 +149,14 @@ pipeline:
 
         # timeout caps a single render HTTP call.
         timeout: 30s
+
+        # max_idle_conns_per_host caps the size of the keep-alive pool to the
+        # rendering service.
+        max_idle_conns_per_host: 100
+
+        # idle_conn_timeout is how long an idle keep-alive connection survives
+        # before the transport closes it.
+        idle_conn_timeout: 90s
 
         # max_total_tokens rejects requests whose tokenized prompt exceeds
         # the limit. Counts both text and image-placeholder tokens. Enforced
