@@ -9,7 +9,13 @@
 # log_level controls global log verbosity. Higher = more output.
 #   1 = warning, 2 = info, 3 = verbose, 4 = debug, 5 = trace.
 # The CLI flag -v overrides this when set.
-log_level: 2
+#
+# Do not enable level 5 (trace) in production. Trace logs request and response
+# bodies (with redaction) through the gateway client (encode and prefill steps),
+# including kv_transfer_params and ec_transfer_params coordination fields such as
+# bootstrap_host, bootstrap_room, and remote_host.
+# A compromised log store would expose them.
+log_level: 4
 
 # ---------------------------------------------------------------------------
 # server: HTTP listener for incoming OpenAI-compatible requests.
@@ -26,9 +32,16 @@ server:
   # bounds the total in-flight time of a single chat — set generously.
   write_timeout: 120s
   
-  # Kubernetes terminationGracePeriodSeconds must exceed shutdown_timeout; SSE 
+  # Kubernetes terminationGracePeriodSeconds must exceed shutdown_timeout; SSE
   # streams held open for up to write_timeout are force-closed once the grace period expires.
   shutdown_timeout: 25s
+
+  # max_request_body_size caps the request body in megabytes. The default is
+  # sized for multimodal requests that inline images as data: URIs, which land
+  # in the body verbatim and are not subject to replace-media-urls.max_download_size.
+  # A text-only deployment can set a much smaller value. Megabytes; default 64.
+  # env: COORDINATOR_SERVER_MAX_REQUEST_BODY_SIZE
+  # max_request_body_size: 64
 
 # ---------------------------------------------------------------------------
 # gateway: outbound HTTP client used by encode/prefill/decode to reach the
@@ -100,13 +113,12 @@ pipeline:
         # 0 (or omitted) = unlimited.
         # max_multimodal_entries: 8
 
-        # max_download_size caps the bytes read per image download. A response
+        # max_download_size caps the megabytes read per image download. A response
         # whose Content-Length or body exceeds the cap is rejected as a client
         # error (4xx). Bounds peak memory together with the two limits above:
-        # roughly max_concurrent_downloads x max_download_size x ~2.3. Bytes;
-        # default 10485760 (10 MB). data: URIs do not hit the network and are
-        # unaffected.
-        # max_download_size: 10485760
+        # roughly max_concurrent_downloads x max_download_size x ~2.3 MB.
+        # data: URIs do not hit the network and are unaffected. Default 10 MB.
+        # max_download_size: 10
 
         # allow_private_networks permits downloads whose resolved IP falls in
         # an RFC1918 private range (10/8, 172.16/12, 192.168/16). Loopback,

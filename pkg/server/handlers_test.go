@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -121,6 +122,42 @@ func TestHandleInference_NullBodyMapsTo400(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for null body, got %d", rec.Code)
 	}
+}
+
+func TestHandleInference_BodyOverConfiguredCapMapsTo413(t *testing.T) {
+	// A body larger than server.max_request_body_size (in MB) is rejected before parsing.
+	// Use a 1 MB cap and send 1 MB + 1 byte to trigger the limit.
+	p := pipeline.New([]pipeline.Step{stubStep{name: "stub"}})
+	srv := New(config.ServerConfig{MaxRequestBodySize: 1}, p)
+	oversize := strings.Repeat("x", config.BytesPerMB+1)
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(oversize))
+	rec := httptest.NewRecorder()
+	srv.handleInference(rec, req)
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected 413 for oversize body, got %d", rec.Code)
+	}
+}
+
+func TestNew_PanicsOnNegativeMaxRequestBodySize(t *testing.T) {
+	p := pipeline.New([]pipeline.Step{stubStep{name: "stub"}})
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected panic for negative MaxRequestBodySize")
+		}
+	}()
+	New(config.ServerConfig{MaxRequestBodySize: -1}, p)
+}
+
+func TestNew_PanicsOnOverflowMaxRequestBodySize(t *testing.T) {
+	// MaxInt64 would cause maxRequestBodySize+1 to overflow to a negative
+	// io.LimitReader limit, making it return immediate EOF.
+	p := pipeline.New([]pipeline.Step{stubStep{name: "stub"}})
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected panic for MaxRequestBodySize > MaxInt64-1")
+		}
+	}()
+	New(config.ServerConfig{MaxRequestBodySize: math.MaxInt64}, p)
 }
 
 // deadlineRecorder wraps httptest.ResponseRecorder with a SetWriteDeadline

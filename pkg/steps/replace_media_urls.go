@@ -35,6 +35,7 @@ import (
 
 	logutil "github.com/llm-d/llm-d-router/pkg/common/observability/logging"
 
+	"github.com/llm-d/coordinator/pkg/config"
 	"github.com/llm-d/coordinator/pkg/gateway"
 	"github.com/llm-d/coordinator/pkg/pipeline"
 	"golang.org/x/sync/errgroup"
@@ -46,7 +47,8 @@ const imageURLPartType = "image_url"
 
 const defaultContentType = "application/octet-stream"
 
-const defaultMaxDownloadSize = 10 << 20 // 10 MB
+// defaultMaxDownloadSize is the default cap for max_download_size, in megabytes.
+const defaultMaxDownloadSize = 10 // 10 MB
 
 func init() {
 	pipeline.Register(ReplaceMediaURLsStepName, NewReplaceMediaURLsStep)
@@ -89,17 +91,17 @@ func NewReplaceMediaURLsStep(_ *gateway.Client, params map[string]any) (pipeline
 		maxEntries = v
 	}
 
-	maxDownloadSize := int64(defaultMaxDownloadSize)
+	maxDownloadSize := int64(defaultMaxDownloadSize) * config.BytesPerMB
 	if v, ok, err := paramInt(params, "max_download_size"); err != nil {
 		return nil, err
 	} else if ok {
-		// math.MaxInt is reserved so download() can read maxDownloadSize+1 as an
-		// oversize sentinel without overflowing to a negative limit, which
-		// io.LimitReader would treat as immediate EOF.
-		if v <= 0 || v == math.MaxInt {
-			return nil, fmt.Errorf("max_download_size must be positive and below %d, got %d", math.MaxInt, v)
+		// Guard against overflow: maxDownloadSize+1 is used as the io.LimitReader
+		// sentinel; an MB value that overflows int64 when converted to bytes would
+		// cause LimitReader to receive a negative limit and return immediate EOF.
+		if v <= 0 || v > (math.MaxInt-1)/config.BytesPerMB {
+			return nil, fmt.Errorf("max_download_size must be positive and at most %d MB, got %d", (math.MaxInt-1)/config.BytesPerMB, v)
 		}
-		maxDownloadSize = int64(v)
+		maxDownloadSize = int64(v) * config.BytesPerMB
 	}
 
 	guard := &addressGuard{}

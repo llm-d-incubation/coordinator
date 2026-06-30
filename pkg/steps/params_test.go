@@ -137,13 +137,13 @@ func TestNewReplaceMediaURLsStep_UnparsableTimeout(t *testing.T) {
 }
 
 func TestNewReplaceMediaURLsStep_FloatFormattedLimit(t *testing.T) {
-	step, err := NewReplaceMediaURLsStep(nil, map[string]any{"max_download_size": 1024.0})
+	step, err := NewReplaceMediaURLsStep(nil, map[string]any{"max_download_size": 5.0})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	rs := step.(*ReplaceMediaURLsStep)
-	if rs.maxDownloadSize != 1024 {
-		t.Fatalf("maxDownloadSize = %d, want 1024", rs.maxDownloadSize)
+	if rs.maxDownloadSize != 5*config.BytesPerMB {
+		t.Fatalf("maxDownloadSize = %d, want %d", rs.maxDownloadSize, 5*config.BytesPerMB)
 	}
 }
 

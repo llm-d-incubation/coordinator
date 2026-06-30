@@ -18,6 +18,8 @@ package server
 
 import (
 	"context"
+	"fmt"
+	"math"
 	"net"
 	"net/http"
 
@@ -77,12 +79,29 @@ func logRequestResponse(next http.Handler) http.Handler {
 }
 
 type Server struct {
-	httpServer *http.Server
-	pipeline   *pipeline.Pipeline
+	httpServer         *http.Server
+	pipeline           *pipeline.Pipeline
+	maxRequestBodySize int64
 }
 
 func New(cfg config.ServerConfig, p *pipeline.Pipeline) *Server {
-	s := &Server{pipeline: p}
+	maxBodySize := cfg.MaxRequestBodySize
+	if maxBodySize == 0 {
+		// Zero means unset; Viper fills this from the config default in
+		// production. Direct callers (e.g. tests) that leave it unset get
+		// the same default.
+		maxBodySize = config.DefaultMaxRequestBodySize
+	}
+	if maxBodySize < 0 {
+		panic(fmt.Sprintf("server: MaxRequestBodySize must be positive, got %d", maxBodySize))
+	}
+	if maxBodySize > (math.MaxInt64-1)/config.BytesPerMB {
+		// maxRequestBodySize*1024*1024+1 is used as the io.LimitReader sentinel;
+		// an MB value that overflows int64 when converted to bytes would cause
+		// LimitReader to receive a negative limit and return immediate EOF.
+		panic(fmt.Sprintf("server: MaxRequestBodySize must be at most %d MB, got %d", int64((math.MaxInt64-1)/config.BytesPerMB), maxBodySize))
+	}
+	s := &Server{pipeline: p, maxRequestBodySize: maxBodySize}
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)

@@ -32,10 +32,9 @@ import (
 	logutil "github.com/llm-d/llm-d-router/pkg/common/observability/logging"
 	reqcommon "github.com/llm-d/llm-d-router/pkg/common/request"
 
+	"github.com/llm-d/coordinator/pkg/config"
 	"github.com/llm-d/coordinator/pkg/pipeline"
 )
-
-const maxRequestBodySize = 64 << 20 // 64 MB
 
 // validRequestID bounds a client-supplied x-request-id to alphanumerics and
 // dashes, at most 128 characters. handleInference replaces a header that fails
@@ -45,12 +44,12 @@ const maxRequestBodySize = 64 << 20 // 64 MB
 var validRequestID = regexp.MustCompile(`^[a-zA-Z0-9\-]{1,128}$`)
 
 func (s *Server) handleInference(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(io.LimitReader(r.Body, maxRequestBodySize+1))
+	body, err := io.ReadAll(io.LimitReader(r.Body, s.maxRequestBodySize*config.BytesPerMB+1))
 	if err != nil {
 		http.Error(w, "failed to read request body", http.StatusBadRequest)
 		return
 	}
-	if len(body) > maxRequestBodySize {
+	if int64(len(body)) > s.maxRequestBodySize*config.BytesPerMB {
 		http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
 		return
 	}

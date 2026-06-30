@@ -28,6 +28,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/llm-d/coordinator/pkg/config"
 	"github.com/llm-d/coordinator/pkg/pipeline"
 )
 
@@ -679,11 +680,11 @@ func TestReplaceMediaURLsStep_RejectsOversizedBody(t *testing.T) {
 		w.Header().Set("Content-Type", "image/png")
 		// No Content-Length set: force the size check to happen during the read.
 		w.(http.Flusher).Flush()
-		_, _ = w.Write(make([]byte, 64))
+		_, _ = w.Write(make([]byte, config.BytesPerMB+1))
 	}))
 	defer imageServer.Close()
 
-	step := newLoopbackStep(t, map[string]any{"max_download_size": 16})
+	step := newLoopbackStep(t, map[string]any{"max_download_size": 1})
 
 	reqCtx := &pipeline.RequestContext{
 		Body: map[string]any{
@@ -713,13 +714,13 @@ func TestReplaceMediaURLsStep_RejectsOversizedBody(t *testing.T) {
 func TestReplaceMediaURLsStep_RejectsOversizedContentLength(t *testing.T) {
 	imageServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
-		w.Header().Set("Content-Length", "1000")
+		w.Header().Set("Content-Length", "1048577") // config.BytesPerMB + 1
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(make([]byte, 1000))
+		_, _ = w.Write(make([]byte, config.BytesPerMB+1))
 	}))
 	defer imageServer.Close()
 
-	rmu := newLoopbackStep(t, map[string]any{"max_download_size": 16})
+	rmu := newLoopbackStep(t, map[string]any{"max_download_size": 1})
 
 	_, _, err := rmu.download(context.Background(), imageServer.URL+"/big.png")
 	if err == nil {
@@ -731,14 +732,15 @@ func TestReplaceMediaURLsStep_RejectsOversizedContentLength(t *testing.T) {
 }
 
 func TestReplaceMediaURLsStep_AllowsBodyAtCap(t *testing.T) {
-	const size = 16
+	const capMB = 1
+	const capBytes = capMB * config.BytesPerMB
 	imageServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
-		_, _ = w.Write(make([]byte, size))
+		_, _ = w.Write(make([]byte, capBytes))
 	}))
 	defer imageServer.Close()
 
-	step := newLoopbackStep(t, map[string]any{"max_download_size": size})
+	step := newLoopbackStep(t, map[string]any{"max_download_size": capMB})
 	reqCtx := &pipeline.RequestContext{
 		Body: map[string]any{
 			"messages": []any{
@@ -758,7 +760,7 @@ func TestReplaceMediaURLsStep_AllowsBodyAtCap(t *testing.T) {
 	if len(reqCtx.MultimodalEntries) != 1 {
 		t.Fatalf("expected 1 entry, got %d", len(reqCtx.MultimodalEntries))
 	}
-	if want := base64.StdEncoding.EncodeToString(make([]byte, size)); reqCtx.MultimodalEntries[0].Base64Data != want {
+	if want := base64.StdEncoding.EncodeToString(make([]byte, capBytes)); reqCtx.MultimodalEntries[0].Base64Data != want {
 		t.Fatalf("entry data mismatch: got %q want %q", reqCtx.MultimodalEntries[0].Base64Data, want)
 	}
 }
@@ -770,14 +772,14 @@ func TestReplaceMediaURLsStep_RejectsOneOversizedAmongMany(t *testing.T) {
 	imageServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
 		if strings.HasPrefix(r.URL.Path, "/big") {
-			_, _ = w.Write(make([]byte, 64))
+			_, _ = w.Write(make([]byte, config.BytesPerMB+1))
 			return
 		}
 		_, _ = w.Write(make([]byte, 4))
 	}))
 	defer imageServer.Close()
 
-	step := newLoopbackStep(t, map[string]any{"max_download_size": 16})
+	step := newLoopbackStep(t, map[string]any{"max_download_size": 1})
 	reqCtx := &pipeline.RequestContext{
 		Body: map[string]any{
 			"messages": []any{
@@ -803,10 +805,11 @@ func TestReplaceMediaURLsStep_RejectsOneOversizedAmongMany(t *testing.T) {
 }
 
 func TestReplaceMediaURLsStep_RejectsInvalidMaxDownloadSize(t *testing.T) {
-	// math.MaxInt is rejected so the maxDownloadSize+1 sentinel read in
-	// download() cannot overflow to a negative limit (which io.LimitReader
-	// would treat as immediate EOF, accepting an oversized body as empty).
-	for _, v := range []int{0, -1, math.MaxInt} {
+	// Values that are zero, negative, or too large to convert to bytes without
+	// overflowing int64 are rejected. Overflow would cause the io.LimitReader
+	// sentinel (maxDownloadSize+1) to become negative, accepting oversized bodies.
+	limit := (math.MaxInt - 1) / config.BytesPerMB
+	for _, v := range []int{0, -1, limit + 1, math.MaxInt} {
 		if _, err := NewReplaceMediaURLsStep(nil, map[string]any{"max_download_size": v}); err == nil {
 			t.Fatalf("expected error for max_download_size=%d", v)
 		}
@@ -1049,7 +1052,7 @@ func TestReplaceMediaURLsStep_RejectsNonListAllowedDomains(t *testing.T) {
 }
 
 func TestReplaceMediaURLsStep_RejectsNonImageDataURI(t *testing.T) {
-	step, _ := NewReplaceMediaURLsStep(map[string]any{})
+	step, _ := NewReplaceMediaURLsStep(nil, map[string]any{})
 	reqCtx := &pipeline.RequestContext{
 		Body: map[string]any{
 			"messages": []any{
@@ -1075,7 +1078,7 @@ func TestReplaceMediaURLsStep_RejectsNonImageDataURI(t *testing.T) {
 }
 
 func TestReplaceMediaURLsStep_RejectsMissingMediaType(t *testing.T) {
-	step, _ := NewReplaceMediaURLsStep(map[string]any{})
+	step, _ := NewReplaceMediaURLsStep(nil, map[string]any{})
 	reqCtx := &pipeline.RequestContext{
 		Body: map[string]any{
 			"messages": []any{
@@ -1101,7 +1104,7 @@ func TestReplaceMediaURLsStep_RejectsMissingMediaType(t *testing.T) {
 }
 
 func TestReplaceMediaURLsStep_CancelledContextSkipsDataURIParse(t *testing.T) {
-	step, _ := NewReplaceMediaURLsStep(map[string]any{})
+	step, _ := NewReplaceMediaURLsStep(nil, map[string]any{})
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	reqCtx := &pipeline.RequestContext{
