@@ -106,6 +106,11 @@ The coordinator sends every sub-request to the same gateway address. It does not
 
 The decode step preserves the original client request path so the gateway can route it to the correct OpenAI-compatible endpoint on the decode worker.
 
+The Gateway API route manifests in `deploy/components/inference-gateway/routing/base`
+express this contract for GAIE-conformant providers. The `agentgateway` overlay sets
+`gatewayClassName: agentgateway` and includes a coordinator ConfigMap whose
+`gateway.address` targets the agentgateway service.
+
 ## Plugin API
 
 Custom pipeline steps can be added by implementing the `Step` interface and registering a factory function.
