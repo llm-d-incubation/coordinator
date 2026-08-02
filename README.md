@@ -1,3 +1,7 @@
+
+> [!WARNING]
+> This repository has been merged into [lm-d-router](https://github.com/llm-d/llm-d-router). No further development happens here.
+
 # LLM-D Coordinator
 
 A Go service that orchestrates multi-phase LLM inference pipelines (Encode/Prefill/Decode) across specialized worker pools. It exposes OpenAI-compatible APIs and routes requests through an Inference Gateway to disaggregated vLLM workers.
