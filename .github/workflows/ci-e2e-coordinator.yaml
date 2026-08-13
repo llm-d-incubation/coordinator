@@ -51,7 +51,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Free disk space
-        uses: justinthelaw/maximize-github-runner-space@v0.10.0
+        uses: justinthelaw/maximize-github-runner-space@v0.11.0
         with:
           cleanup-profile: custom
           remove-android: 'true'
@@ -66,7 +66,7 @@ jobs:
           swapfile-size: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: false
